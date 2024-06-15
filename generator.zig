@@ -2,14 +2,13 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const json = std.json;
 const io = std.io;
-const ExtensionApi = @import("extension_api.zig");
-const AnyWriter = std.io.AnyWriter;
+const Api = @import("extension_api.zig");
 const AnyReader = std.io.AnyReader;
 
 // 8mb should be large enough for the whole extension_api.json file
 const api_read_buffer_starting_size = 1024; //* 1024 * 8;
 
-const global_enum_prefix_map = std.ComptimeStringMap([]const u8, .{
+const global_enum_prefix_map = std.StaticStringMap([]const u8).initComptime(.{
     .{ "Side", "SIDE_" },
     .{ "Corner", "CORNER_" },
     .{ "HorizontalAlignment", "HORIZONTAL_ALIGNMENT_" },
@@ -27,32 +26,13 @@ const global_enum_prefix_map = std.ComptimeStringMap([]const u8, .{
     .{ "Variant.Operator", "OP_" },
 });
 
-const type_map = std.ComptimeStringMap([]const u8, .{
+const type_map = std.StaticStringMap([]const u8).initComptime(.{
     .{ "int", "i64" },
     .{ "int32", "i32" },
     .{ "float", "f32" },
 });
 
-// const Generator = struct {
-//     allocator: Allocator,
-//     type_map: std.StringHashMap([]const u8),
-//     writer: AnyWriter,
-//     parsed_api: std.json.Parsed(ExtensionApi),
-
-//     fn init(allocator: Allocator, api_buffer: []const u8, writer: AnyWriter) !Generator {
-//         return Generator{
-//             .allocator = allocator,
-//             .type_map = std.StringHashMap([]const u8).init(allocator),
-//             .writer = writer,
-//             .parsed_api = parsed_api,
-//         };
-//     }
-
-//     fn deinit(self: *@This()) void {
-//         self.type_map.deinit();
-//         self.parsed_api.deinit();
-//     }
-// };
+const build_configuraiton = "float_32";
 
 pub fn generate(allocator: Allocator, extension_api_reader: AnyReader, output_directory: []u8) !void {
     var buffer = try allocator.alloc(u8, api_read_buffer_starting_size);
@@ -64,15 +44,103 @@ pub fn generate(allocator: Allocator, extension_api_reader: AnyReader, output_di
         total_bytes_read += try extension_api_reader.readAll(buffer[total_bytes_read..]);
     }
 
-    const parsed_api = try std.json.parseFromSlice(ExtensionApi, allocator, buffer[0..total_bytes_read], .{});
+    const parsed_api = try std.json.parseFromSlice(Api, allocator, buffer[0..total_bytes_read], .{});
     defer parsed_api.deinit();
-    try writeHeader(allocator, output_directory, parsed_api.value.header);
-    // try writeGlobalEnums(gen.allocator, gen.writer, gen.parsed_api.value.global_enums);
-    try writeUtilityFunctions(allocator, output_directory, parsed_api.value.utility_functions);
+
+    try makeDirIfMissing(output_directory);
+
+    try generateHeader(allocator, output_directory, parsed_api.value.header);
+    try generateGlobalEnums(allocator, output_directory, parsed_api.value.global_enums);
+    try generateUtilityFunctions(allocator, output_directory, parsed_api.value.utility_functions);
+    try generateBuiltinClasses(allocator, output_directory, parsed_api.value);
     // try writeTypes(gen, writer);
 }
 
-fn writeHeader(allocator: Allocator, output_directory: []u8, header: ExtensionApi.Header) !void {
+fn initBuiltinSizeMap(allocator: Allocator, class_size_configurations: []Api.BuiltinClassSize) !std.StringHashMap(usize) {
+    var class_size_map = std.StringHashMap(usize).init(allocator);
+    errdefer class_size_map.deinit();
+    for (class_size_configurations) |configuration| {
+        if (std.mem.eql(u8, configuration.build_configuration, build_configuraiton)) {
+            for (configuration.sizes) |size| {
+                try class_size_map.put(size.name, @intCast(size.size));
+            }
+            return class_size_map;
+        }
+    }
+    return error.configuration_not_found;
+}
+
+fn generateBuiltinClasses(allocator: Allocator, output_directory: []const u8, api: Api) !void {
+    var built_in_size_map = try initBuiltinSizeMap(allocator, api.builtin_class_sizes);
+    defer built_in_size_map.deinit();
+
+    const class_directory_path = try std.fs.path.join(allocator, &.{ output_directory, "classes" });
+    defer allocator.free(class_directory_path);
+
+    try makeDirIfMissing(class_directory_path);
+
+    const class_binding_directory_path = try std.fs.path.join(allocator, &.{ class_directory_path, "bindings" });
+    defer allocator.free(class_binding_directory_path);
+
+    try makeDirIfMissing(class_binding_directory_path);
+
+    for (api.builtin_classes) |class| {
+        try generateBuiltinClass(allocator, class_directory_path, class_binding_directory_path, class, if (built_in_size_map.get(class.name)) |size| size else 0);
+    }
+}
+
+fn generateBuiltinClass(allocator: Allocator, output_directory: []const u8, bindings_directory: []const u8, class: Api.BuiltinClass, size: usize) !void {
+    const file_name = try std.fmt.allocPrint(allocator, "{s}.zig", .{class.name});
+    defer allocator.free(file_name);
+    const file_path = try std.fs.path.join(allocator, &.{ output_directory, file_name });
+    defer allocator.free(file_path);
+    const file = try std.fs.cwd().createFile(file_path, .{});
+    defer file.close();
+
+    const writer = file.writer();
+
+    try writer.print("pub const size = {d};\n", .{size});
+
+    // method bindings
+    if (class.methods) |methods| {
+        const bindings_file_name = try std.fmt.allocPrint(allocator, "{s}_bindings.zig", .{class.name});
+        defer allocator.free(bindings_file_name);
+        const bindings_file_path = try std.fs.path.join(allocator, &.{ bindings_directory, bindings_file_name });
+        defer allocator.free(bindings_file_path);
+        const bindings_file = try std.fs.cwd().createFile(bindings_file_path, .{});
+        defer bindings_file.close();
+        const bindings_writer = bindings_file.writer();
+
+        _ = try bindings_writer.write("var function_bindings: struct {\n");
+        for (methods) |func| {
+            try bindings_writer.print("    {s}: *fn (", .{func.name});
+            try writer.print("pub inline fn {s}(", .{func.name});
+            if (!func.is_static) {
+                if (func.is_const) {
+                    try writer.print("self: {s}", .{class.name});
+                } else {
+                    try writer.print("self: * {s}", .{class.name});
+                }
+            }
+
+            if (func.arguments) |args| {
+                if (!func.is_static) _ = try writer.write(", ");
+
+                try writeFunctionArgs(bindings_writer, args);
+                try bindings_writer.print(") {s},\n", .{func.return_type});
+
+                try writeFunctionArgs(writer, args);
+                try writer.print(") {s} {{\n", .{func.return_type});
+            } else {
+                try bindings_writer.print("    {s}: *fn () {s},\n", .{ func.name, func.return_type });
+            }
+        }
+        _ = try bindings_writer.write("} = undefined;\n");
+        _ = try writer.write("}\n");
+    }
+}
+
+fn generateHeader(allocator: Allocator, output_directory: []u8, header: Api.Header) !void {
     const file_path = try std.fs.path.join(allocator, &.{ output_directory, "header.zig" });
     defer allocator.free(file_path);
     const file = try std.fs.cwd().createFile(file_path, .{});
@@ -99,25 +167,10 @@ fn writeHeader(allocator: Allocator, output_directory: []u8, header: ExtensionAp
     });
 }
 
-fn writeTypes() !void {
-
-    // std.StringHashMap(comptime V: type)
-
-    // writer.print("pub const {s} = struct {{\n", .{});
-    // for () |value| {
-    //     writer.print("    {s}: {s},\n", .{});
-    // }
-    // writer.write("};\n");
-}
-
-fn writeClasses() !void {
-    // pub const {s} = struct {};
-}
-
-fn writeUtilityFunctions(
+fn generateUtilityFunctions(
     allocator: Allocator,
     output_directory: []u8,
-    functions: []ExtensionApi.Function,
+    functions: []Api.Function,
 ) !void {
     const file_path = try std.fs.path.join(allocator, &.{ output_directory, "utility_functions.zig" });
     defer allocator.free(file_path);
@@ -128,28 +181,34 @@ fn writeUtilityFunctions(
     _ = try writer.write("const bindings = struct {\n");
     for (functions) |func| {
         if (func.arguments) |args| {
-            try writer.print("    {s}: *fn(", .{func.name});
+            try writer.print("    {s}: *fn (", .{func.name});
             try writeFunctionArgs(writer.any(), args);
             try writer.print(") {s},\n", .{func.return_type});
         } else {
-            try writer.print("    {s}: *fn() {s},\n", .{ func.name, func.return_type });
+            try writer.print("    {s}: *fn () {s},\n", .{ func.name, func.return_type });
         }
     }
     _ = try writer.write("};\n");
 }
 
-fn writeFunctionArgs(writer: anytype, args: []ExtensionApi.Function.Argument) !void {
+fn writeFunctionArgs(writer: anytype, args: []Api.Function.Argument) !void {
     try writer.print("{s}: {s}", .{ args[0].name, args[0].type });
     for (args[1..]) |arg| {
         try writer.print(", {s}: {s}", .{ arg.name, arg.type });
     }
 }
 
-fn writeGlobalEnums(
+fn generateGlobalEnums(
     allocator: Allocator,
-    writer: AnyWriter,
-    global_enums: []const ExtensionApi.GlobalEnum,
+    output_directory: []u8,
+    global_enums: []const Api.GlobalEnum,
 ) !void {
+    const file_path = try std.fs.path.join(allocator, &.{ output_directory, "global_enums.zig" });
+    defer allocator.free(file_path);
+    const file = try std.fs.cwd().createFile(file_path, .{});
+    defer file.close();
+    const writer = file.writer();
+
     for (global_enums) |global_enum| {
         if (global_enum.is_bitfield) {
             const enum_label = try getLabel(toTitleCase, allocator, global_enum.name, null);
@@ -269,4 +328,11 @@ fn toTitleCase(allocator: Allocator, text: []const u8) ![]u8 {
     const camel_case_text = try toCamelCase(allocator, text);
     camel_case_text[0] = std.ascii.toUpper(camel_case_text[0]);
     return camel_case_text;
+}
+
+fn makeDirIfMissing(path: []const u8) !void {
+    std.fs.cwd().makeDir(path) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
 }

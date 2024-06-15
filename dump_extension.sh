@@ -1,2 +1,3 @@
 #!/usr/bin/bash
-(cd api/gen; godot --dump-extension-api)
+mkdir -p api
+(cd api; godot --dump-extension-api & godot --dump-gdextension-interface )
