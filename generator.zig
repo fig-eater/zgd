@@ -5,6 +5,8 @@ const io = std.io;
 const Api = @import("extension_api.zig");
 const AnyReader = std.io.AnyReader;
 
+const IdFormatter = std.fmt.Formatter(formatIdSpecial);
+
 // 8mb should be large enough for the whole extension_api.json file
 const api_read_buffer_starting_size = 1024; //* 1024 * 8;
 
@@ -111,7 +113,7 @@ fn generateBuiltinClass(allocator: Allocator, output_directory: []const u8, bind
         defer bindings_file.close();
         const bindings_writer = bindings_file.writer();
 
-        _ = try bindings_writer.write("var function_bindings: struct {\n");
+        try bindings_writer.writeAll("var function_bindings: struct {\n");
         for (methods) |func| {
             try bindings_writer.print("    {s}: *fn (", .{func.name});
             try writer.print("pub inline fn {s}(", .{func.name});
@@ -124,7 +126,7 @@ fn generateBuiltinClass(allocator: Allocator, output_directory: []const u8, bind
             }
 
             if (func.arguments) |args| {
-                if (!func.is_static) _ = try writer.write(", ");
+                if (!func.is_static) try writer.writeAll(", ");
 
                 try writeFunctionArgs(bindings_writer, args);
                 try bindings_writer.print(") {s},\n", .{func.return_type});
@@ -135,8 +137,8 @@ fn generateBuiltinClass(allocator: Allocator, output_directory: []const u8, bind
                 try bindings_writer.print("    {s}: *fn () {s},\n", .{ func.name, func.return_type });
             }
         }
-        _ = try bindings_writer.write("} = undefined;\n");
-        _ = try writer.write("}\n");
+        try bindings_writer.writeAll("} = undefined;\n");
+        try writer.writeAll("}\n");
     }
 }
 
@@ -178,7 +180,7 @@ fn generateUtilityFunctions(
     defer file.close();
     const writer = file.writer();
 
-    _ = try writer.write("const bindings = struct {\n");
+    try writer.writeAll("const bindings = struct {\n");
     for (functions) |func| {
         if (func.arguments) |args| {
             try writer.print("    {s}: *fn (", .{func.name});
@@ -188,7 +190,7 @@ fn generateUtilityFunctions(
             try writer.print("    {s}: *fn () {s},\n", .{ func.name, func.return_type });
         }
     }
-    _ = try writer.write("};\n");
+    try writer.writeAll("};\n");
 }
 
 fn writeFunctionArgs(writer: anytype, args: []Api.Function.Argument) !void {
@@ -211,123 +213,185 @@ fn generateGlobalEnums(
 
     for (global_enums) |global_enum| {
         if (global_enum.is_bitfield) {
-            const enum_label = try getLabel(toTitleCase, allocator, global_enum.name, null);
-            try writer.print("pub const {s} = enum(i64) {{\n", .{enum_label});
-            allocator.free(enum_label);
+            try writer.print(
+                "pub const {p} = enum(i64) {{\n",
+                .{IdFormatter{ .data = global_enum.name }},
+            );
             const prefix = global_enum_prefix_map.get(global_enum.name);
             for (global_enum.values) |value| {
-                const label = try getLabel(toSnakeCase, allocator, value.name, prefix);
-                try writer.print("    {s} = {d},\n", .{ label, value.value });
-                allocator.free(label);
+                try writer.print("    {s} = {d},\n", .{
+                    IdFormatter{ .data = withoutPrefix(value.name, prefix) },
+                    value.value,
+                });
             }
-            _ = try writer.write("};\n");
+            try writer.writeAll("};\n");
         } else {
-            const enum_label = try getLabel(toTitleCase, allocator, global_enum.name, null);
-            try writer.print("pub const {s} = enum(i64) {{\n", .{enum_label});
-            allocator.free(enum_label);
+            try writer.print(
+                "pub const {p} = enum(i64) {{\n",
+                .{IdFormatter{ .data = global_enum.name }},
+            );
             const prefix = global_enum_prefix_map.get(global_enum.name);
             for (global_enum.values) |value| {
-                const label = try getLabel(toSnakeCase, allocator, value.name, prefix);
-                try writer.print("    {s} = {d},\n", .{ label, value.value });
-                allocator.free(label);
+                try writer.print("    {s} = {d},\n", .{
+                    IdFormatter{ .data = withoutPrefix(value.name, prefix) },
+                    value.value,
+                });
             }
-            _ = try writer.write("};\n");
+            try writer.writeAll("};\n");
         }
     }
 }
 
-fn getLabel(
-    comptime converter: StringConverter,
-    allocator: Allocator,
-    text: []const u8,
-    remove_prefix: ?[]const u8,
-) ![]const u8 {
-    var label: []const u8 = text;
-    if (remove_prefix) |p| if (text.len > p.len and std.mem.startsWith(u8, text, p)) {
-        label = text[p.len..];
+fn withoutPrefix(bytes: []const u8, prefix: ?[]const u8) []const u8 {
+    if (prefix) |p| if (bytes.len > p.len and std.mem.startsWith(u8, bytes, p)) {
+        return bytes[p.len..];
     };
-
-    label = try converter(allocator, label);
-    if (!std.zig.isValidId(label)) {
-        const new_label = try allocator.alloc(u8, label.len + 3);
-        new_label[0] = '@';
-        new_label[1] = '"';
-        std.mem.copyForwards(u8, new_label[2..], label);
-        new_label[new_label.len - 1] = '"';
-        allocator.free(label);
-        return new_label;
-    }
-    return label;
+    return bytes;
 }
 
-const StringConverter = fn (Allocator, []const u8) anyerror![]const u8;
+fn isValidIdCaseInsisitive(bytes: []const u8) bool {
+    if (!std.zig.isValidId(bytes)) return false;
+    const bytes_len = bytes.len;
+    const bytes_last = bytes_len - 1;
+    check_keyword_block: for (std.zig.Token.keywords.keys()) |keyword| {
+        if (keyword.len == bytes_len and keyword[0] == (bytes[0] | 0b00100000) and keyword[bytes_last] == (bytes[bytes_last] | 0b00100000)) {
+            for (bytes[1..bytes_last], keyword[1..bytes_last]) |datachar, keychar| {
+                if ((datachar | 0b00100000) != keychar) {
+                    continue :check_keyword_block; // continue to next word
+                }
+            }
+            return false; // matches keyword
+        }
+    }
+    return true;
+}
 
-fn toSnakeCase(allocator: Allocator, string: []const u8) ![]u8 {
-    const PrevCharType = packed struct(u2) {
-        lowercase: bool = false,
-        gap: bool = false,
+fn formatIdSpecial(
+    data: []const u8,
+    comptime fmt: []const u8,
+    options: std.fmt.FormatOptions,
+    writer: anytype,
+) !void {
+    if (fmt.len == 0) {
+        try std.zig.fmtId(data).format("{}", options, writer);
+        return;
+    }
+
+    const formatFunction = comptime switch (fmt[0]) {
+        's' => formatSnakeCase,
+        'c' => formatCamelCase,
+        'p' => formatPascalCase,
+        else => @compileError("expected {}, {s}, {c}, or {p}, found {" ++ fmt ++ "}"),
     };
-    var prevchar: PrevCharType = .{};
-    var output_idx: usize = 0;
-    const output = try allocator.alloc(u8, string.len * 2);
-    errdefer allocator.free(output);
-    for (string) |c| {
+
+    const is_valid_id = isValidIdCaseInsisitive(data);
+
+    if (!is_valid_id) try writer.writeAll("@\"");
+
+    try formatFunction(data, fmt, options, writer);
+
+    if (!is_valid_id) try writer.writeByte('"');
+}
+
+fn formatSnakeCase(
+    data: []const u8,
+    comptime fmt: []const u8,
+    options: std.fmt.FormatOptions,
+    writer: anytype,
+) !void {
+    _ = fmt;
+    _ = options;
+    var last_lowercase: bool = false;
+
+    for (data) |c| {
         switch (c) {
             'A'...'Z' => {
-                if (prevchar.lowercase or prevchar.gap) {
-                    output[output_idx] = '_';
-                    output_idx += 1;
-                }
-                prevchar = .{};
-                output[output_idx] = c | 0b00100000;
-                output_idx += 1;
+                if (last_lowercase) try writer.writeByte('_');
+                try writer.writeByte(c | 0b00100000);
+                last_lowercase = false;
             },
-            '_', '-', '.' => prevchar = .{ .gap = true },
-            else => if (std.ascii.isWhitespace(c)) {
-                prevchar = .{ .gap = true };
-            } else {
-                if (prevchar.gap) {
-                    output[output_idx] = '_';
-                    output_idx += 1;
-                }
-                prevchar = .{ .lowercase = true };
-                output[output_idx] = c;
-                output_idx += 1;
+            'a'...'z' => {
+                try writer.writeByte(c);
+                last_lowercase = true;
+            },
+            else => {
+                try writer.writeByte(c);
+                last_lowercase = false;
             },
         }
     }
-    return allocator.realloc(output, output_idx);
 }
 
-fn toCamelCase(allocator: Allocator, string: []const u8) ![]u8 {
-    var gap: bool = false;
-    const output = try allocator.alloc(u8, string.len);
-    errdefer allocator.free(output);
-    var output_idx: usize = 0;
-    for (string) |c| {
+fn formatCamelCase(
+    data: []const u8,
+    comptime fmt: []const u8,
+    options: std.fmt.FormatOptions,
+    writer: anytype,
+) !void {
+    _ = fmt;
+    _ = options;
+
+    const rest_start = rest_start_block: {
+        for (data, 0..) |c, i| {
+            switch (c) {
+                'A'...'Z' => {
+                    try writer.writeByte(c | 0b00100000); // make first character lowercase
+                    break :rest_start_block i + 1;
+                },
+                // skip whitespace or separator
+                '_', ' ', '\t', '\n', '\r', std.ascii.control_code.vt, std.ascii.control_code.ff => {},
+                else => {
+                    try writer.writeByte(c);
+                    break :rest_start_block i + 1;
+                },
+            }
+        }
+        break :rest_start_block data.len;
+    };
+
+    if (rest_start < data.len) {
+        var word_start: bool = false;
+        for (data[rest_start..]) |c| {
+            switch (c) {
+                'a'...'z' => {
+                    try writer.writeByte(if (word_start) c & 0b11011111 else c);
+                    word_start = false;
+                },
+                // white space or separator
+                '_', ' ', '\t', '\n', '\r', std.ascii.control_code.vt, std.ascii.control_code.ff => word_start = true,
+                else => {
+                    try writer.writeByte(c);
+                    word_start = false;
+                },
+            }
+        }
+    }
+}
+
+fn formatPascalCase(
+    data: []const u8,
+    comptime fmt: []const u8,
+    options: std.fmt.FormatOptions,
+    writer: anytype,
+) !void {
+    _ = fmt;
+    _ = options;
+
+    var word_start: bool = true;
+    for (data) |c| {
         switch (c) {
             'a'...'z' => {
-                output[output_idx] = if (gap) c & 0b11011111 else c;
-                output_idx += 1;
-                gap = false;
+                try writer.writeByte(if (word_start) c & 0b11011111 else c);
+                word_start = false;
             },
-            '_', '-', '.' => gap = true,
-            else => if (std.ascii.isWhitespace(c)) {
-                gap = true;
-            } else {
-                output[output_idx] = c;
-                output_idx += 1;
-                gap = false;
+            // white space or separator
+            '_', ' ', '\t', '\n', '\r', std.ascii.control_code.vt, std.ascii.control_code.ff => word_start = true,
+            else => {
+                try writer.writeByte(c);
+                word_start = false;
             },
         }
     }
-    return allocator.realloc(output, output_idx);
-}
-
-fn toTitleCase(allocator: Allocator, text: []const u8) ![]u8 {
-    const camel_case_text = try toCamelCase(allocator, text);
-    camel_case_text[0] = std.ascii.toUpper(camel_case_text[0]);
-    return camel_case_text;
 }
 
 fn makeDirIfMissing(path: []const u8) !void {
