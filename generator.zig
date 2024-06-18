@@ -4,11 +4,26 @@ const json = std.json;
 const io = std.io;
 const Api = @import("extension_api.zig");
 const AnyReader = std.io.AnyReader;
-
+const FileWriter = std.fs.File.Writer;
 const IdFormatter = std.fmt.Formatter(formatIdSpecial);
 
+const BuiltinClassGenerator = *const fn (
+    allocator: Allocator,
+    output_directory: []const u8,
+    bindings_directory: []const u8,
+    class: Api.BuiltinClass,
+    godot_writer: FileWriter,
+    size: usize,
+) anyerror!void;
+
 // 8mb should be large enough for the whole extension_api.json file
-const api_read_buffer_starting_size = 1024; //* 1024 * 8;
+const api_read_buffer_starting_size = 1024 * 1024 * 8;
+
+const build_configuraiton = "float_32";
+
+const internal_name = "internal";
+const function_bindings_name = "bindings";
+const opaque_field_name = "__opaque";
 
 const global_enum_prefix_map = std.StaticStringMap([]const u8).initComptime(.{
     .{ "Side", "SIDE_" },
@@ -34,7 +49,12 @@ const type_map = std.StaticStringMap([]const u8).initComptime(.{
     .{ "float", "f32" },
 });
 
-const build_configuraiton = "float_32";
+var builtin_class_custom_generator_map = std.StaticStringMap(BuiltinClassGenerator).initComptime(.{
+    .{ "int", &generateBuiltinClassInt },
+    .{ "float", &generateBuiltinClassFloat },
+    .{ "Nil", &generateBuiltinClassIgnore },
+    .{ "bool", &generateBuiltinClassBool },
+});
 
 pub fn generate(allocator: Allocator, extension_api_reader: AnyReader, output_directory: []u8) !void {
     var buffer = try allocator.alloc(u8, api_read_buffer_starting_size);
@@ -51,11 +71,18 @@ pub fn generate(allocator: Allocator, extension_api_reader: AnyReader, output_di
 
     try makeDirIfMissing(output_directory);
 
+    const file_path = try std.fs.path.join(allocator, &.{ output_directory, "godot.zig" });
+    defer allocator.free(file_path);
+    const file = try std.fs.cwd().createFile(file_path, .{});
+    defer file.close();
+    const godot_writer = file.writer();
+
     try generateHeader(allocator, output_directory, parsed_api.value.header);
     try generateGlobalEnums(allocator, output_directory, parsed_api.value.global_enums);
     try generateUtilityFunctions(allocator, output_directory, parsed_api.value.utility_functions);
-    try generateBuiltinClasses(allocator, output_directory, parsed_api.value);
+    try generateBuiltinClasses(allocator, output_directory, godot_writer, parsed_api.value);
     // try writeTypes(gen, writer);
+
 }
 
 fn initBuiltinSizeMap(allocator: Allocator, class_size_configurations: []Api.BuiltinClassSize) !std.StringHashMap(usize) {
@@ -72,7 +99,12 @@ fn initBuiltinSizeMap(allocator: Allocator, class_size_configurations: []Api.Bui
     return error.configuration_not_found;
 }
 
-fn generateBuiltinClasses(allocator: Allocator, output_directory: []const u8, api: Api) !void {
+fn generateBuiltinClasses(
+    allocator: Allocator,
+    output_directory: []const u8,
+    godot_writer: FileWriter,
+    api: Api,
+) !void {
     var built_in_size_map = try initBuiltinSizeMap(allocator, api.builtin_class_sizes);
     defer built_in_size_map.deinit();
 
@@ -81,65 +113,177 @@ fn generateBuiltinClasses(allocator: Allocator, output_directory: []const u8, ap
 
     try makeDirIfMissing(class_directory_path);
 
-    const class_binding_directory_path = try std.fs.path.join(allocator, &.{ class_directory_path, "bindings" });
-    defer allocator.free(class_binding_directory_path);
+    const internal_class_directory_path = try std.fs.path.join(allocator, &.{ class_directory_path, "internal" });
+    defer allocator.free(internal_class_directory_path);
 
-    try makeDirIfMissing(class_binding_directory_path);
+    try makeDirIfMissing(internal_class_directory_path);
 
     for (api.builtin_classes) |class| {
-        try generateBuiltinClass(allocator, class_directory_path, class_binding_directory_path, class, if (built_in_size_map.get(class.name)) |size| size else 0);
+        const handler = if (builtin_class_custom_generator_map.get(class.name)) |handler| handler else &generateBuiltinClass;
+        try handler(
+            allocator,
+            class_directory_path,
+            internal_class_directory_path,
+            class,
+            godot_writer,
+            if (built_in_size_map.get(class.name)) |size| size else 0,
+        );
     }
 }
+fn generateBuiltinClass(
+    allocator: Allocator,
+    output_directory: []const u8,
+    internals_directory: []const u8,
+    class: Api.BuiltinClass,
+    godot_writer: FileWriter,
+    size: usize,
+) !void {
+    try godot_writer.print("pub const {p} = @import(\"classes/{s}.zig\");\n", .{
+        IdFormatter{ .data = class.name },
+        class.name,
+    });
 
-fn generateBuiltinClass(allocator: Allocator, output_directory: []const u8, bindings_directory: []const u8, class: Api.BuiltinClass, size: usize) !void {
-    const file_name = try std.fmt.allocPrint(allocator, "{s}.zig", .{class.name});
+    const class_name_id = try std.fmt.allocPrint(allocator, "{p}", .{IdFormatter{ .data = class.name }});
+    defer allocator.free(class_name_id);
+
+    // setup class file writer
+    const file_name = try std.fmt.allocPrint(allocator, "{s}.zig", .{class_name_id});
     defer allocator.free(file_name);
     const file_path = try std.fs.path.join(allocator, &.{ output_directory, file_name });
     defer allocator.free(file_path);
     const file = try std.fs.cwd().createFile(file_path, .{});
     defer file.close();
-
     const writer = file.writer();
 
-    try writer.print("pub const size = {d};\n", .{size});
+    // setup internal class file writer
+    const internal_file_name = try std.fmt.allocPrint(allocator, "{s}_" ++ internal_name ++ ".zig", .{class.name});
+    defer allocator.free(internal_file_name);
+    const internal_file_path = try std.fs.path.join(allocator, &.{ internals_directory, internal_file_name });
+    defer allocator.free(internal_file_path);
+    const internal_file = try std.fs.cwd().createFile(internal_file_path, .{});
+    defer internal_file.close();
+    const internal_file_writer = internal_file.writer();
+
+    // import godot lib into both
+    try writer.writeAll("const GD = @import(\"../godot.zig\");\n");
+    try internal_file_writer.writeAll("const GD = @import(\"../../godot.zig\");\n");
+
+    // import internal into class file
+    try writer.print(
+        "const internal = @import(\"" ++ internal_name ++ "/{s}\");\n",
+        .{internal_file_name},
+    );
+
+    // write class size to internal
+    try internal_file_writer.print("pub const size = {d};\n", .{size});
+
+    // write opaque blob to class
+    try writer.writeAll(opaque_field_name ++ ": [internal.size]u8,\n");
 
     // method bindings
     if (class.methods) |methods| {
-        const bindings_file_name = try std.fmt.allocPrint(allocator, "{s}_bindings.zig", .{class.name});
-        defer allocator.free(bindings_file_name);
-        const bindings_file_path = try std.fs.path.join(allocator, &.{ bindings_directory, bindings_file_name });
-        defer allocator.free(bindings_file_path);
-        const bindings_file = try std.fs.cwd().createFile(bindings_file_path, .{});
-        defer bindings_file.close();
-        const bindings_writer = bindings_file.writer();
-
-        try bindings_writer.writeAll("var function_bindings: struct {\n");
+        try internal_file_writer.writeAll("var " ++ function_bindings_name ++ ": struct {\n");
         for (methods) |func| {
-            try bindings_writer.print("    {s}: *fn (", .{func.name});
-            try writer.print("pub inline fn {s}(", .{func.name});
+            const func_name_id = try std.fmt.allocPrint(allocator, "{c}", .{
+                IdFormatter{ .data = func.name },
+            });
+            defer allocator.free(func_name_id);
+
+            const return_type_id = try std.fmt.allocPrint(allocator, "{p}", .{
+                IdFormatter{ .data = func.return_type },
+            });
+            defer allocator.free(return_type_id);
+
+            try internal_file_writer.print("    {s}: *fn (", .{func_name_id});
+            try writer.print("pub inline fn {s}(", .{func_name_id});
+
+            // add self as first param if non-static
             if (!func.is_static) {
                 if (func.is_const) {
-                    try writer.print("self: {s}", .{class.name});
+                    try writer.print("self: GD.{s}", .{class_name_id});
+                    try internal_file_writer.print("self: GD.{s}", .{class_name_id});
                 } else {
-                    try writer.print("self: * {s}", .{class.name});
+                    try writer.print("self: * GD.{s}", .{class_name_id});
+                    try internal_file_writer.print("self: * GD.{s}", .{class_name_id});
                 }
             }
 
             if (func.arguments) |args| {
-                if (!func.is_static) try writer.writeAll(", ");
-
-                try writeFunctionArgs(bindings_writer, args);
-                try bindings_writer.print(") {s},\n", .{func.return_type});
-
+                if (!func.is_static) {
+                    try writer.writeAll(", ");
+                    try internal_file_writer.writeAll(", ");
+                }
+                try writeFunctionArgs(internal_file_writer, args);
                 try writeFunctionArgs(writer, args);
-                try writer.print(") {s} {{\n", .{func.return_type});
-            } else {
-                try bindings_writer.print("    {s}: *fn () {s},\n", .{ func.name, func.return_type });
             }
+            try internal_file_writer.print(") GD.{s},\n", .{return_type_id});
+            try writer.print(") GD.{s} {{\n", .{return_type_id});
+
+            { // call bindning function
+                try writer.print("    return internal.bindings.{s}(", .{func_name_id});
+
+                if (!func.is_static) {
+                    try writer.writeAll("self");
+                }
+
+                if (func.arguments) |args| {
+                    if (!func.is_static) {
+                        try writer.writeAll(", ");
+                    }
+                    try writer.print("{s}_", .{IdFormatter{ .data = args[0].name }});
+                    for (args[1..]) |arg| {
+                        try writer.print(", {s}_", .{IdFormatter{ .data = arg.name }});
+                    }
+                }
+
+                try writer.writeAll(");\n");
+            }
+            try writer.writeAll("}\n"); // close function definition
         }
-        try bindings_writer.writeAll("} = undefined;\n");
-        try writer.writeAll("}\n");
+        try internal_file_writer.writeAll("} = undefined;\n");
+
+        { // write constructors
+
+        }
     }
+}
+fn generateBuiltinClassBool(
+    _: Allocator,
+    _: []const u8,
+    _: []const u8,
+    _: Api.BuiltinClass,
+    godot_writer: FileWriter,
+    _: usize,
+) !void {
+    try godot_writer.writeAll("pub const Bool = bool;\n");
+}
+fn generateBuiltinClassIgnore(
+    _: Allocator,
+    _: []const u8,
+    _: []const u8,
+    _: Api.BuiltinClass,
+    _: FileWriter,
+    _: usize,
+) !void {}
+fn generateBuiltinClassInt(
+    _: Allocator,
+    _: []const u8,
+    _: []const u8,
+    _: Api.BuiltinClass,
+    godot_writer: FileWriter,
+    _: usize,
+) !void {
+    try godot_writer.writeAll("pub const Int = i64;\n");
+}
+fn generateBuiltinClassFloat(
+    _: Allocator,
+    _: []const u8,
+    _: []const u8,
+    _: Api.BuiltinClass,
+    godot_writer: FileWriter,
+    _: usize,
+) !void {
+    try godot_writer.writeAll("pub const Float = f64;\n");
 }
 
 fn generateHeader(allocator: Allocator, output_directory: []u8, header: Api.Header) !void {
@@ -194,9 +338,9 @@ fn generateUtilityFunctions(
 }
 
 fn writeFunctionArgs(writer: anytype, args: []Api.Function.Argument) !void {
-    try writer.print("{s}: {s}", .{ args[0].name, args[0].type });
+    try writer.print("{s}_: GD.{p}", .{ IdFormatter{ .data = args[0].name }, IdFormatter{ .data = args[0].type } });
     for (args[1..]) |arg| {
-        try writer.print(", {s}: {s}", .{ arg.name, arg.type });
+        try writer.print(", {s}_: GD.{p}", .{ IdFormatter{ .data = arg.name }, IdFormatter{ .data = arg.type } });
     }
 }
 
