@@ -86,19 +86,84 @@ const MultiArgs = struct {
     const TypeFnPair = struct { type, *const anyopaque };
 };
 
-const init = makeOverloaded(void, .{
-    .{
-        .{ void, init0 },
-        .{ Rect2, init1 },
-        .{ Rect2i, init2 },
-    },
-    .{
-        .{ struct { postition: Vector2, size: Vector2 }, init3 },
-        .{ struct { x: f32, y: f32, w: f32, h: f32 }, init4 },
-    },
+const init = makeOverloaded(.{
+    init0, // void
+    init1, // from: Rect2
+    init2, // from: Rect2i
+    init3, // postition: Vector2, size: Vector2
+    init4, // x: f32, y: f32, w: f32, h: f32
 });
 
-fn makeOverloaded(comptime ReturnType: type, comptime overload_args: anytype) fn (args: anytype) ReturnType {
+fn makeOverloaded(comptime functions: anytype) fn (args: anytype) OverloadedFnReturnType(functions) {
+    comptime {
+        const ReturnType = OverloadedFnReturnType(functions);
+
+        const functions_fields = functions_fields: {
+            switch (@typeInfo(@TypeOf(functions))) {
+                .Struct => |s| if (s.is_tuple) break :functions_fields s.fields,
+                else => {},
+            }
+            @compileError("Expected `functions` to be touple found " ++ @typeName(@TypeOf(functions)));
+        };
+
+        for (functions_fields[1..]) |field| {
+            switch (@typeInfo(field.type)) {
+                .Fn => |f| {
+                    if (f.return_type != ReturnType) @compileError("inconsistant function return types, expected " ++
+                        @typeName(ReturnType) ++ " found " ++ @typeName(f.return_type));
+                },
+                else => @compileError("Expected `functions` to be touple of functions, found " ++ @typeName(field.type)),
+            }
+        }
+
+        if (functions_fields.len > 1) {
+            for (functions_fields[0 .. functions_fields.len - 1], 1..) |function_1, i| {
+                for (functions_fields[i..]) |function_2| {
+                    if (hasSameArgs(function_1.type, function_2.type)) {
+                        @compileError("Ambiuous function overload. Function " ++
+                            @typeName(function_1.type) ++ " and " ++ @typeName(function_2.type) ++
+                            " have same argument types");
+                    }
+                }
+            }
+        }
+
+        return struct {
+            fn f(args: anytype) ReturnType {
+                _ = args;
+            }
+        }.f;
+    }
+}
+
+fn hasSameArgs(comptime a: anytype, comptime b: anytype) bool {
+    if (a == b) return true;
+    const ati = @typeInfo(a);
+    const bti = @typeInfo(b);
+    if (ati != .Fn or bti != .Fn) @compileError("a and b must be functions");
+
+    if (ati.Fn.params.len != bti.Fn.params.len) return false;
+
+    for (ati.Fn.params, bti.Fn.params) |ap, bp| {
+        if (ap.type != bp.type) return false;
+    }
+    return true;
+}
+
+fn OverloadedFnReturnType(comptime functions: anytype) type {
+    comptime switch (@typeInfo(@TypeOf(functions))) {
+        .Struct => |s| {
+            if (s.fields.len <= 0) return noreturn;
+            switch (@typeInfo(s.fields[0].type)) {
+                .Fn => |f| return f.return_type,
+                else => return noreturn,
+            }
+        },
+        else => return noreturn,
+    };
+}
+
+fn makeOverloaded2(comptime ReturnType: type, comptime overload_args: anytype) fn (args: anytype) ReturnType {
     for (overload_args[1]) |tfp| {
         if (@typeInfo(tfp[0]) != .Struct) {
             @compileError("expected struct found " ++ @typeName(tfp[0]));
