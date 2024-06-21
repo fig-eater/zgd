@@ -6,11 +6,12 @@ const Api = @import("extension_api.zig");
 const AnyReader = std.io.AnyReader;
 const FileWriter = std.fs.File.Writer;
 const IdFormatter = std.fmt.Formatter(formatIdSpecial);
+const Dir = std.fs.Dir;
 
 const BuiltinClassGenerator = *const fn (
     allocator: Allocator,
-    output_directory: []const u8,
-    bindings_directory: []const u8,
+    output_directory: Dir,
+    bindings_directory: Dir,
     class: Api.BuiltinClass,
     godot_writer: FileWriter,
     size: usize,
@@ -56,7 +57,11 @@ var builtin_class_custom_generator_map = std.StaticStringMap(BuiltinClassGenerat
     .{ "bool", &generateBuiltinClassBool },
 });
 
-pub fn generate(allocator: Allocator, extension_api_reader: AnyReader, output_directory: []u8) !void {
+pub fn generate(
+    allocator: Allocator,
+    extension_api_reader: AnyReader,
+    output_directory: Dir,
+) !void {
     var buffer = try allocator.alloc(u8, api_read_buffer_starting_size);
     defer allocator.free(buffer);
 
@@ -66,14 +71,16 @@ pub fn generate(allocator: Allocator, extension_api_reader: AnyReader, output_di
         total_bytes_read += try extension_api_reader.readAll(buffer[total_bytes_read..]);
     }
 
-    const parsed_api = try std.json.parseFromSlice(Api, allocator, buffer[0..total_bytes_read], .{});
+    const parsed_api = try std.json.parseFromSlice(
+        Api,
+        allocator,
+        buffer[0..total_bytes_read],
+        .{},
+    );
     defer parsed_api.deinit();
 
-    try makeDirIfMissing(output_directory);
-
-    const file_path = try std.fs.path.join(allocator, &.{ output_directory, "godot.zig" });
-    defer allocator.free(file_path);
-    const file = try std.fs.cwd().createFile(file_path, .{});
+    // create core library file
+    const file = try output_directory.createFile("godot.zig", .{});
     defer file.close();
     const godot_writer = file.writer();
 
@@ -85,7 +92,10 @@ pub fn generate(allocator: Allocator, extension_api_reader: AnyReader, output_di
 
 }
 
-fn initBuiltinSizeMap(allocator: Allocator, class_size_configurations: []Api.BuiltinClassSize) !std.StringHashMap(usize) {
+fn initBuiltinSizeMap(
+    allocator: Allocator,
+    class_size_configurations: []Api.BuiltinClassSize,
+) !std.StringHashMap(usize) {
     var class_size_map = std.StringHashMap(usize).init(allocator);
     errdefer class_size_map.deinit();
     for (class_size_configurations) |configuration| {
@@ -101,29 +111,28 @@ fn initBuiltinSizeMap(allocator: Allocator, class_size_configurations: []Api.Bui
 
 fn generateBuiltinClasses(
     allocator: Allocator,
-    output_directory: []const u8,
+    output_directory: Dir,
     godot_writer: FileWriter,
     api: Api,
 ) !void {
     var built_in_size_map = try initBuiltinSizeMap(allocator, api.builtin_class_sizes);
     defer built_in_size_map.deinit();
 
-    const class_directory_path = try std.fs.path.join(allocator, &.{ output_directory, "classes" });
-    defer allocator.free(class_directory_path);
+    try makeDirIfMissing(output_directory, "classes");
+    const classes_dir = try output_directory.openDir("classes", .{});
 
-    try makeDirIfMissing(class_directory_path);
-
-    const internal_class_directory_path = try std.fs.path.join(allocator, &.{ class_directory_path, "internal" });
-    defer allocator.free(internal_class_directory_path);
-
-    try makeDirIfMissing(internal_class_directory_path);
+    try makeDirIfMissing(classes_dir, "internal");
+    const internal_dir = try classes_dir.openDir("internal", .{});
 
     for (api.builtin_classes) |class| {
-        const handler = if (builtin_class_custom_generator_map.get(class.name)) |handler| handler else &generateBuiltinClass;
+        const handler = if (builtin_class_custom_generator_map.get(class.name)) |handler|
+            handler
+        else
+            &generateBuiltinClass;
         try handler(
             allocator,
-            class_directory_path,
-            internal_class_directory_path,
+            classes_dir,
+            internal_dir,
             class,
             godot_writer,
             if (built_in_size_map.get(class.name)) |size| size else 0,
@@ -132,8 +141,8 @@ fn generateBuiltinClasses(
 }
 fn generateBuiltinClass(
     allocator: Allocator,
-    output_directory: []const u8,
-    internals_directory: []const u8,
+    output_dir: Dir,
+    internals_dir: Dir,
     class: Api.BuiltinClass,
     godot_writer: FileWriter,
     size: usize,
@@ -143,24 +152,26 @@ fn generateBuiltinClass(
         class.name,
     });
 
-    const class_name_id = try std.fmt.allocPrint(allocator, "{p}", .{IdFormatter{ .data = class.name }});
+    const class_name_id = try std.fmt.allocPrint(allocator, "{p}", .{
+        IdFormatter{ .data = class.name },
+    });
     defer allocator.free(class_name_id);
 
     // setup class file writer
     const file_name = try std.fmt.allocPrint(allocator, "{s}.zig", .{class_name_id});
     defer allocator.free(file_name);
-    const file_path = try std.fs.path.join(allocator, &.{ output_directory, file_name });
-    defer allocator.free(file_path);
-    const file = try std.fs.cwd().createFile(file_path, .{});
+    const file = try output_dir.createFile(file_name, .{});
     defer file.close();
     const writer = file.writer();
 
     // setup internal class file writer
-    const internal_file_name = try std.fmt.allocPrint(allocator, "{s}_" ++ internal_name ++ ".zig", .{class.name});
+    const internal_file_name = try std.fmt.allocPrint(
+        allocator,
+        "{s}_" ++ internal_name ++ ".zig",
+        .{class.name},
+    );
     defer allocator.free(internal_file_name);
-    const internal_file_path = try std.fs.path.join(allocator, &.{ internals_directory, internal_file_name });
-    defer allocator.free(internal_file_path);
-    const internal_file = try std.fs.cwd().createFile(internal_file_path, .{});
+    const internal_file = try internals_dir.createFile(internal_file_name, .{});
     defer internal_file.close();
     const internal_file_writer = internal_file.writer();
 
@@ -249,8 +260,8 @@ fn generateBuiltinClass(
 }
 fn generateBuiltinClassBool(
     _: Allocator,
-    _: []const u8,
-    _: []const u8,
+    _: Dir,
+    _: Dir,
     _: Api.BuiltinClass,
     godot_writer: FileWriter,
     _: usize,
@@ -259,16 +270,16 @@ fn generateBuiltinClassBool(
 }
 fn generateBuiltinClassIgnore(
     _: Allocator,
-    _: []const u8,
-    _: []const u8,
+    _: Dir,
+    _: Dir,
     _: Api.BuiltinClass,
     _: FileWriter,
     _: usize,
 ) !void {}
 fn generateBuiltinClassInt(
     _: Allocator,
-    _: []const u8,
-    _: []const u8,
+    _: Dir,
+    _: Dir,
     _: Api.BuiltinClass,
     godot_writer: FileWriter,
     _: usize,
@@ -277,8 +288,8 @@ fn generateBuiltinClassInt(
 }
 fn generateBuiltinClassFloat(
     _: Allocator,
-    _: []const u8,
-    _: []const u8,
+    _: Dir,
+    _: Dir,
     _: Api.BuiltinClass,
     godot_writer: FileWriter,
     _: usize,
@@ -286,10 +297,8 @@ fn generateBuiltinClassFloat(
     try godot_writer.writeAll("pub const Float = f64;\n");
 }
 
-fn generateHeader(allocator: Allocator, output_directory: []u8, header: Api.Header) !void {
-    const file_path = try std.fs.path.join(allocator, &.{ output_directory, "header.zig" });
-    defer allocator.free(file_path);
-    const file = try std.fs.cwd().createFile(file_path, .{});
+fn generateHeader(_: Allocator, output_directory: Dir, header: Api.Header) !void {
+    const file = try output_directory.createFile("header.zig", .{});
     defer file.close();
     const writer = file.writer();
 
@@ -314,13 +323,11 @@ fn generateHeader(allocator: Allocator, output_directory: []u8, header: Api.Head
 }
 
 fn generateUtilityFunctions(
-    allocator: Allocator,
-    output_directory: []u8,
+    _: Allocator,
+    output_directory: Dir,
     functions: []Api.Function,
 ) !void {
-    const file_path = try std.fs.path.join(allocator, &.{ output_directory, "utility_functions.zig" });
-    defer allocator.free(file_path);
-    const file = try std.fs.cwd().createFile(file_path, .{});
+    const file = try output_directory.createFile("utility_functions.zig", .{});
     defer file.close();
     const writer = file.writer();
 
@@ -338,20 +345,24 @@ fn generateUtilityFunctions(
 }
 
 fn writeFunctionArgs(writer: anytype, args: []Api.Function.Argument) !void {
-    try writer.print("{s}_: GD.{p}", .{ IdFormatter{ .data = args[0].name }, IdFormatter{ .data = args[0].type } });
+    try writer.print("{s}_: GD.{p}", .{
+        IdFormatter{ .data = args[0].name },
+        IdFormatter{ .data = args[0].type },
+    });
     for (args[1..]) |arg| {
-        try writer.print(", {s}_: GD.{p}", .{ IdFormatter{ .data = arg.name }, IdFormatter{ .data = arg.type } });
+        try writer.print(", {s}_: GD.{p}", .{
+            IdFormatter{ .data = arg.name },
+            IdFormatter{ .data = arg.type },
+        });
     }
 }
 
 fn generateGlobalEnums(
-    allocator: Allocator,
-    output_directory: []u8,
+    _: Allocator,
+    output_directory: Dir,
     global_enums: []const Api.GlobalEnum,
 ) !void {
-    const file_path = try std.fs.path.join(allocator, &.{ output_directory, "global_enums.zig" });
-    defer allocator.free(file_path);
-    const file = try std.fs.cwd().createFile(file_path, .{});
+    const file = try output_directory.createFile("global_enums.zig", .{});
     defer file.close();
     const writer = file.writer();
 
@@ -398,7 +409,10 @@ fn isValidIdCaseInsisitive(bytes: []const u8) bool {
     const bytes_len = bytes.len;
     const bytes_last = bytes_len - 1;
     check_keyword_block: for (std.zig.Token.keywords.keys()) |keyword| {
-        if (keyword.len == bytes_len and keyword[0] == (bytes[0] | 0b00100000) and keyword[bytes_last] == (bytes[bytes_last] | 0b00100000)) {
+        if (keyword.len == bytes_len and
+            keyword[0] == (bytes[0] | 0b00100000) and
+            keyword[bytes_last] == (bytes[bytes_last] | 0b00100000))
+        {
             for (bytes[1..bytes_last], keyword[1..bytes_last]) |datachar, keychar| {
                 if ((datachar | 0b00100000) != keychar) {
                     continue :check_keyword_block; // continue to next word
@@ -538,8 +552,8 @@ fn formatPascalCase(
     }
 }
 
-fn makeDirIfMissing(path: []const u8) !void {
-    std.fs.cwd().makeDir(path) catch |err| switch (err) {
+fn makeDirIfMissing(dir: Dir, path: []const u8) !void {
+    dir.makeDir(path) catch |err| switch (err) {
         error.PathAlreadyExists => {},
         else => return err,
     };
