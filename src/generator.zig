@@ -59,7 +59,7 @@ var builtin_class_custom_generator_map = std.StaticStringMap(BuiltinClassGenerat
 
 pub fn generate(
     allocator: Allocator,
-    extension_api_reader: AnyReader,
+    extension_api_reader: anytype,
     output_directory: Dir,
 ) !void {
     var buffer = try allocator.alloc(u8, api_read_buffer_starting_size);

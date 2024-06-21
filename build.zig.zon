@@ -1,0 +1,19 @@
+.{
+    .name = "zigodot",
+    .version = "0.0.0",
+    .minimum_zig_version = "0.13.0",
+    .dependencies = .{
+        .overloading = .{
+            .url = "https://github.com/fig-eater/zig-function-overloading/archive/refs/heads/main.tar.gz",
+            .hash = "122033a578a940a74e3d1bca5d77fc8c2e6f04403f80427d9aafd4ec6c149afb0b05",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        // For example...
+        //"LICENSE",
+        //"README.md",
+    },
+}

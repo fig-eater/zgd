@@ -29,8 +29,13 @@ pub fn main() !void {
 
     const output_directory_full_path = if (std.fs.path.isAbsolute(args[2]))
         args[1]
-    else
-        try std.fs.cwd().realpathAlloc(allocator, args[2]);
+    else output_directory_full_path: {
+        std.fs.cwd().makeDir(args[2]) catch |err| switch (err) {
+            error.PathAlreadyExists => {},
+            else => return err,
+        };
+        break :output_directory_full_path try std.fs.cwd().realpathAlloc(allocator, args[2]);
+    };
     defer if (output_directory_full_path.ptr != args[2].ptr)
         allocator.free(output_directory_full_path);
 
