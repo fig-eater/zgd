@@ -21,7 +21,6 @@ const BuiltinClassGenerator = *const fn (
 const api_read_buffer_starting_size = 1024 * 1024 * 8;
 
 const build_configuraiton = "float_32";
-
 const internal_name = "internal";
 const function_bindings_name = "bindings";
 const opaque_field_name = "__opaque";
@@ -139,6 +138,7 @@ fn generateBuiltinClasses(
         );
     }
 }
+
 fn generateBuiltinClass(
     allocator: Allocator,
     output_dir: Dir,
@@ -176,6 +176,7 @@ fn generateBuiltinClass(
     const internal_file_writer = internal_file.writer();
 
     // import godot lib into both
+    try writer.writeAll("const overloading = @import(\"overloading\");");
     try writer.writeAll("const GD = @import(\"../godot.zig\");\n");
     try internal_file_writer.writeAll("const GD = @import(\"../../godot.zig\");\n");
 

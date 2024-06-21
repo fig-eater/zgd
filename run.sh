@@ -1,3 +1,3 @@
 #!/usr/bin/bash
-mkdir -p gen
-zig run main.zig -- api/extension_api.json gen/
+rm -r src/gen/
+zig build run -- src/api/extension_api.json src/gen/
