@@ -2,8 +2,6 @@
 zig-out/
 
 api/
-gen/
-bin/
-*.o
-main
+bindings/
+
 

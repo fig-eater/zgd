@@ -6,18 +6,26 @@ const Target = Build.ResolvedTarget;
 const OptimizeMode = std.builtin.OptimizeMode;
 
 pub const zigodot_module_name = "godot";
-const zigodot_module_root = "src/gen/godot.zig";
+
+const bindings_dir = "src/bindings/";
+const api_dump_dir = "src/api/";
+
+const zigodot_module_root = bindings_dir ++ "godot.zig";
+const bindings_header = bindings_dir ++ "header.zig";
+const generator_root = "src/generator/root.zig";
+const example_root = "src/example/example_extension.zig";
+
+const extension_api_path = api_dump_dir ++ "extension_api.json";
 
 pub fn createGeneratorExeArtifact(
     b: *Build,
     target: Target,
     optimize: OptimizeMode,
 ) *Step.InstallArtifact {
-
     // generator executable compile step
     const generator_exe = b.addExecutable(.{
         .name = "zigodot_generator",
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path(generator_root),
         .target = target,
         .optimize = optimize,
     });
@@ -43,14 +51,21 @@ pub fn buildRunGeneratorStep(b: *Build, generator_exe_artifact: *Step.InstallArt
     return run_generator_step;
 }
 
-pub fn buildBindingsStep(b: *Build, generator_exe_artifact: *Step.InstallArtifact, dump_api_step: *Step) *Step {
+pub fn buildBindingsStep(
+    b: *Build,
+    generator_exe_artifact: *Step.InstallArtifact,
+    dump_api_step: *Step,
+) *Step {
     const bindings_step = b.step("bindings", "Build godot bindings");
     bindings_step.dependOn(dump_api_step);
     bindings_step.dependOn(&generator_exe_artifact.step);
 
     // Command for building the bindings to the gen folder
     const build_bindings_cmd = b.addRunArtifact(generator_exe_artifact.artifact);
-    build_bindings_cmd.addArgs(&.{ b.dupePath("src/api/extension_api.json"), b.dupePath("src/gen/") });
+    build_bindings_cmd.addArgs(&.{
+        b.dupePath(extension_api_path),
+        b.dupePath(bindings_dir),
+    });
     bindings_step.dependOn(&build_bindings_cmd.step);
 
     return bindings_step;
@@ -95,12 +110,15 @@ pub fn buildExampleExtensionStep(
 
     const example_extension_lib = b.addSharedLibrary(.{
         .name = "zigodot_example",
-        .root_source_file = b.path("src/example/example_extension.zig"),
+        .root_source_file = b.path(example_root),
         .target = target,
         .optimize = optimize,
     });
 
-    example_extension_lib.root_module.addImport(zigodot_module_name, b.modules.get(zigodot_module_name).?);
+    example_extension_lib.root_module.addImport(
+        zigodot_module_name,
+        b.modules.get(zigodot_module_name).?,
+    );
 
     const example_extension_install_artifact = b.addInstallArtifact(example_extension_lib, .{});
 
@@ -112,7 +130,7 @@ pub fn runExampleStep(b: *Build, target: Target, optimize: OptimizeMode) *Step {
     const run_example_step = b.step("run-example", "Run zigodot example");
     const example_exe = b.addExecutable(.{
         .name = "zgd_example",
-        .root_source_file = b.path("src/example/example_extension.zig"),
+        .root_source_file = b.path(example_root),
         .target = target,
         .optimize = optimize,
     });
@@ -129,12 +147,12 @@ pub fn runExampleStep(b: *Build, target: Target, optimize: OptimizeMode) *Step {
 
 pub fn dumpApiStep(b: *std.Build) *Step {
     const dump_api_step = b.step("dump-api", "Dump godot api");
-    b.build_root.handle.makeDir("src/api") catch |err| if (err != error.PathAlreadyExists)
+    b.build_root.handle.makeDir(api_dump_dir) catch |err| if (err != error.PathAlreadyExists)
         @panic("failed to create api path");
     const cmd = b.addSystemCommand(&.{ "godot", "--headless", "--dump-extension-api" });
-    cmd.cwd = b.path("src/api");
+    cmd.cwd = b.path(api_dump_dir);
     const cmd2 = b.addSystemCommand(&.{ "godot", "--headless", "--dump-gdextension-interface" });
-    cmd2.cwd = b.path("src/api");
+    cmd2.cwd = b.path(api_dump_dir);
     dump_api_step.dependOn(&cmd.step);
     dump_api_step.dependOn(&cmd2.step);
     return dump_api_step;
@@ -152,4 +170,22 @@ pub fn build(b: *std.Build) void {
     _ = addModule(b, bindings_step, target, optimize);
     _ = buildExampleExtensionStep(b, target, optimize);
     _ = runExampleStep(b, target, optimize);
+}
+
+const GodotVersion = struct {
+    major: u32,
+    minor: u32,
+    patch: u32,
+    status: []const u8,
+    build: []const u8,
+};
+
+pub fn parseGodotVersion(version_text: []const u8) GodotVersion {
+    for (version_text) |c| {
+        switch (c) {
+            '0'...'9' => {},
+            '.' => {},
+            else => error.ParseError,
+        }
+    }
 }

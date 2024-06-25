@@ -1,6 +1,7 @@
 const std = @import("std");
-const heap = std.heap;
 const generator = @import("generator.zig");
+const gen_fs = @import("fs.zig");
+const heap = std.heap;
 const Allocator = std.mem.Allocator;
 const AnyReader = std.io.AnyReader;
 
