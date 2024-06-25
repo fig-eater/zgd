@@ -43,8 +43,9 @@ pub fn buildRunGeneratorStep(b: *Build, generator_exe_artifact: *Step.InstallArt
     return run_generator_step;
 }
 
-pub fn buildBindingsStep(b: *Build, generator_exe_artifact: *Step.InstallArtifact) *Step {
+pub fn buildBindingsStep(b: *Build, generator_exe_artifact: *Step.InstallArtifact, dump_api_step: *Step) *Step {
     const bindings_step = b.step("bindings", "Build godot bindings");
+    bindings_step.dependOn(dump_api_step);
     bindings_step.dependOn(&generator_exe_artifact.step);
 
     // Command for building the bindings to the gen folder
@@ -126,6 +127,19 @@ pub fn runExampleStep(b: *Build, target: Target, optimize: OptimizeMode) *Step {
     return run_example_step;
 }
 
+pub fn dumpApiStep(b: *std.Build) *Step {
+    const dump_api_step = b.step("dump-api", "Dump godot api");
+    b.build_root.handle.makeDir("src/api") catch |err| if (err != error.PathAlreadyExists)
+        @panic("failed to create api path");
+    const cmd = b.addSystemCommand(&.{ "godot", "--headless", "--dump-extension-api" });
+    cmd.cwd = b.path("src/api");
+    const cmd2 = b.addSystemCommand(&.{ "godot", "--headless", "--dump-gdextension-interface" });
+    cmd2.cwd = b.path("src/api");
+    dump_api_step.dependOn(&cmd.step);
+    dump_api_step.dependOn(&cmd2.step);
+    return dump_api_step;
+}
+
 pub fn build(b: *std.Build) void {
     // Config
     const target = b.standardTargetOptions(.{});
@@ -133,7 +147,8 @@ pub fn build(b: *std.Build) void {
 
     const generator_exe_artifact = createGeneratorExeArtifact(b, target, optimize);
     _ = buildRunGeneratorStep(b, generator_exe_artifact);
-    const bindings_step = buildBindingsStep(b, generator_exe_artifact);
+    const dump_api_step = dumpApiStep(b);
+    const bindings_step = buildBindingsStep(b, generator_exe_artifact, dump_api_step);
     _ = addModule(b, bindings_step, target, optimize);
     _ = buildExampleExtensionStep(b, target, optimize);
     _ = runExampleStep(b, target, optimize);
