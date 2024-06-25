@@ -6,7 +6,7 @@ pub fn main() !void {
 }
 
 export fn cool() callconv(.C) void {
-    std.debug.print("{s}", .{@typeName(GD.Float)});
+    std.debug.print("{s}\n", .{@typeName(GD.Float)});
 }
 
 // const GD = @import("api/gen/gdextension_interface.zig");

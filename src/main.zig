@@ -20,12 +20,12 @@ pub fn main() !void {
         return;
     }
 
-    const extnesion_api_full_path = if (std.fs.path.isAbsolute(args[1]))
+    const extension_api_full_path = if (std.fs.path.isAbsolute(args[1]))
         args[1]
     else
         try std.fs.cwd().realpathAlloc(allocator, args[1]);
-    defer if (extnesion_api_full_path.ptr != args[1].ptr)
-        allocator.free(extnesion_api_full_path);
+    defer if (extension_api_full_path.ptr != args[1].ptr)
+        allocator.free(extension_api_full_path);
 
     const output_directory_full_path = if (std.fs.path.isAbsolute(args[2]))
         args[1]
@@ -39,7 +39,7 @@ pub fn main() !void {
     defer if (output_directory_full_path.ptr != args[2].ptr)
         allocator.free(output_directory_full_path);
 
-    const input_file = try std.fs.openFileAbsolute(extnesion_api_full_path, .{});
+    const input_file = try std.fs.openFileAbsolute(extension_api_full_path, .{});
     defer input_file.close();
 
     std.fs.makeDirAbsolute(output_directory_full_path) catch |err| switch (err) {

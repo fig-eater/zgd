@@ -20,7 +20,7 @@ const BuiltinClassGenerator = *const fn (
 // 8mb should be large enough for the whole extension_api.json file
 const api_read_buffer_starting_size = 1024 * 1024 * 8;
 
-const build_configuraiton = "float_32";
+const build_configuration = "float_32";
 const internal_name = "internal";
 const function_bindings_name = "bindings";
 const opaque_field_name = "__opaque";
@@ -98,7 +98,7 @@ fn initBuiltinSizeMap(
     var class_size_map = std.StringHashMap(usize).init(allocator);
     errdefer class_size_map.deinit();
     for (class_size_configurations) |configuration| {
-        if (std.mem.eql(u8, configuration.build_configuration, build_configuraiton)) {
+        if (std.mem.eql(u8, configuration.build_configuration, build_configuration)) {
             for (configuration.sizes) |size| {
                 try class_size_map.put(size.name, @intCast(size.size));
             }
@@ -231,7 +231,7 @@ fn generateBuiltinClass(
             try internal_file_writer.print(") GD.{s},\n", .{return_type_id});
             try writer.print(") GD.{s} {{\n", .{return_type_id});
 
-            { // call bindning function
+            { // call binding function
                 try writer.print("    return internal.bindings.{s}(", .{func_name_id});
 
                 if (!func.is_static) {
@@ -405,7 +405,7 @@ fn withoutPrefix(bytes: []const u8, prefix: ?[]const u8) []const u8 {
     return bytes;
 }
 
-fn isValidIdCaseInsisitive(bytes: []const u8) bool {
+fn isValidIdCaseInsensitive(bytes: []const u8) bool {
     if (!std.zig.isValidId(bytes)) return false;
     const bytes_len = bytes.len;
     const bytes_last = bytes_len - 1;
@@ -414,8 +414,8 @@ fn isValidIdCaseInsisitive(bytes: []const u8) bool {
             keyword[0] == (bytes[0] | 0b00100000) and
             keyword[bytes_last] == (bytes[bytes_last] | 0b00100000))
         {
-            for (bytes[1..bytes_last], keyword[1..bytes_last]) |datachar, keychar| {
-                if ((datachar | 0b00100000) != keychar) {
+            for (bytes[1..bytes_last], keyword[1..bytes_last]) |data_char, key_char| {
+                if ((data_char | 0b00100000) != key_char) {
                     continue :check_keyword_block; // continue to next word
                 }
             }
@@ -443,7 +443,7 @@ fn formatIdSpecial(
         else => @compileError("expected {}, {s}, {c}, or {p}, found {" ++ fmt ++ "}"),
     };
 
-    const is_valid_id = isValidIdCaseInsisitive(data);
+    const is_valid_id = isValidIdCaseInsensitive(data);
 
     if (!is_valid_id) try writer.writeAll("@\"");
 
