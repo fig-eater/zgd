@@ -61,16 +61,20 @@ var builtin_class_custom_generator_map = std.StaticStringMap(BuiltinClassGenerat
 
 pub fn generate(
     allocator: Allocator,
-    extension_api_reader: anytype,
     output_directory: Dir,
 ) !void {
+    try dumpApi(allocator, output_directory);
+
+    const api_file = try output_directory.openFile("api/extension_api.json", .{});
+    const api_reader = api_file.reader();
+
     var buffer = try allocator.alloc(u8, api_read_buffer_starting_size);
     defer allocator.free(buffer);
 
-    var total_bytes_read: usize = try extension_api_reader.readAll(buffer);
+    var total_bytes_read: usize = try api_reader.readAll(buffer);
     while (total_bytes_read >= buffer.len) {
         buffer = try allocator.realloc(buffer, buffer.len * 2);
-        total_bytes_read += try extension_api_reader.readAll(buffer[total_bytes_read..]);
+        total_bytes_read += try api_reader.readAll(buffer[total_bytes_read..]);
     }
 
     const parsed_api = try std.json.parseFromSlice(
@@ -92,18 +96,59 @@ pub fn generate(
     try generateBuiltinClasses(allocator, output_directory, godot_writer, parsed_api.value);
     // try writeTypes(gen, writer);
 
+    try generateVersionFile(allocator, output_directory);
 }
 
-// pub fn generateVersionFile(allocator: Allocator, output_directory: Dir) void {
-//     const result = try std.process.Child.run(.{
-//         .allocator = allocator,
-//         .argv = &.{ "godot", "--version" },
-//     });
-//     const result = try std.process.Child.run(.{});
-//     const version_file = try output_directory.createFile("version", .{});
-//     defer version_file.close();
-//     // version_file.writer();
-// }
+pub fn dumpApi(allocator: Allocator, output_directory: Dir) !void {
+    try gen_fs.makeDirIfMissing(output_directory, "api");
+    const api_dir_string = try output_directory.realpathAlloc(allocator, "api");
+    defer allocator.free(api_dir_string);
+    const api_dir = try output_directory.openDir("api", .{});
+
+    var child_dump_api = std.process.Child.init(
+        &.{ "godot", "--headless", "--dump-extension-api" },
+        allocator,
+    );
+    child_dump_api.cwd = api_dir_string;
+    child_dump_api.cwd_dir = api_dir;
+    child_dump_api.stderr_behavior = .Ignore;
+    child_dump_api.stdout_behavior = .Ignore;
+    child_dump_api.stdin_behavior = .Ignore;
+    try child_dump_api.spawn();
+
+    var child_dump_interface = std.process.Child.init(
+        &.{ "godot", "--headless", "--dump-gdextension-interface" },
+        allocator,
+    );
+    child_dump_interface.cwd = api_dir_string;
+    child_dump_interface.cwd_dir = api_dir;
+    child_dump_interface.stderr_behavior = .Ignore;
+    child_dump_interface.stdout_behavior = .Ignore;
+    child_dump_interface.stdin_behavior = .Ignore;
+    try child_dump_interface.spawn();
+
+    _ = try child_dump_api.wait();
+    _ = try child_dump_interface.wait();
+}
+
+pub fn generateVersionFile(allocator: Allocator, output_directory: Dir) !void {
+    const version_file = try output_directory.createFile("version", .{});
+    defer version_file.close();
+    const result = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "godot", "--version" },
+    });
+    defer {
+        allocator.free(result.stdout);
+        allocator.free(result.stderr);
+    }
+    const writer = version_file.writer();
+    var seq = std.mem.splitSequence(u8, result.stdout, "\n");
+    try writer.print("{s}\n{s}\n", .{
+        seq.first(),
+        zig_version_string,
+    });
+}
 
 fn initBuiltinSizeMap(
     allocator: Allocator,

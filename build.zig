@@ -9,14 +9,11 @@ const OptimizeMode = std.builtin.OptimizeMode;
 pub const zigodot_module_name = "godot";
 
 const bindings_dir = "src/bindings/";
-const api_dump_dir = "src/api/";
 
 const zigodot_module_root = bindings_dir ++ "godot.zig";
 const bindings_header = bindings_dir ++ "header.zig";
 const generator_root = "src/generator/root.zig";
 const example_root = "src/example/example_extension.zig";
-
-const extension_api_path = api_dump_dir ++ "extension_api.json";
 
 pub fn createGeneratorExeArtifact(
     b: *Build,
@@ -55,19 +52,17 @@ pub fn buildRunGeneratorStep(b: *Build, generator_exe_artifact: *Step.InstallArt
 pub fn buildBindingsStep(
     b: *Build,
     generator_exe_artifact: *Step.InstallArtifact,
-    dump_api_step: *Step,
 ) *Step {
     const bindings_step = b.step("bindings", "Build godot bindings");
-    bindings_step.dependOn(dump_api_step);
-    bindings_step.dependOn(&generator_exe_artifact.step);
+    const force = b.option(bool, "regen-zigodot", "Force regeneration of godot bindings");
+    if ((force != null and force.?) or !areBindingsUpToDate(b)) {
+        bindings_step.dependOn(&generator_exe_artifact.step);
 
-    // Command for building the bindings to the gen folder
-    const build_bindings_cmd = b.addRunArtifact(generator_exe_artifact.artifact);
-    build_bindings_cmd.addArgs(&.{
-        b.dupePath(extension_api_path),
-        b.dupePath(bindings_dir),
-    });
-    bindings_step.dependOn(&build_bindings_cmd.step);
+        // Command for building the bindings to the gen folder
+        const build_bindings_cmd = b.addRunArtifact(generator_exe_artifact.artifact);
+        build_bindings_cmd.addArgs(&.{b.dupePath(bindings_dir)});
+        bindings_step.dependOn(&build_bindings_cmd.step);
+    }
 
     return bindings_step;
 }
@@ -146,17 +141,36 @@ pub fn runExampleStep(b: *Build, target: Target, optimize: OptimizeMode) *Step {
     return run_example_step;
 }
 
-pub fn dumpApiStep(b: *std.Build) *Step {
-    const dump_api_step = b.step("dump-api", "Dump godot api");
-    b.build_root.handle.makeDir(api_dump_dir) catch |err| if (err != error.PathAlreadyExists)
-        @panic("failed to create api path");
-    const cmd = b.addSystemCommand(&.{ "godot", "--headless", "--dump-extension-api" });
-    cmd.cwd = b.path(api_dump_dir);
-    const cmd2 = b.addSystemCommand(&.{ "godot", "--headless", "--dump-gdextension-interface" });
-    cmd2.cwd = b.path(api_dump_dir);
-    dump_api_step.dependOn(&cmd.step);
-    dump_api_step.dependOn(&cmd2.step);
-    return dump_api_step;
+pub fn areBindingsUpToDate(b: *Build) bool {
+    const version_file = b.build_root.handle.openFile("src/bindings/version", .{}) catch
+        return false;
+    defer version_file.close();
+
+    const godot_version_cached = version_file.reader().readUntilDelimiterAlloc(
+        b.allocator,
+        '\n',
+        1024,
+    ) catch return false;
+    defer b.allocator.free(godot_version_cached);
+
+    const zig_version_cached = version_file.reader().readUntilDelimiterAlloc(
+        b.allocator,
+        '\n',
+        1024,
+    ) catch return false;
+    defer b.allocator.free(zig_version_cached);
+
+    const result = std.process.Child.run(.{
+        .allocator = b.allocator,
+        .argv = &.{ "godot", "--version" },
+    }) catch return false;
+    defer {
+        b.allocator.free(result.stderr);
+        b.allocator.free(result.stdout);
+    }
+    var seq = std.mem.splitSequence(u8, result.stdout, "\n");
+    return (std.mem.eql(u8, godot_version_cached, seq.first()) and
+        std.mem.eql(u8, zig_version_cached, builtin.zig_version_string));
 }
 
 pub fn build(b: *std.Build) !void {
@@ -166,76 +180,8 @@ pub fn build(b: *std.Build) !void {
 
     const generator_exe_artifact = createGeneratorExeArtifact(b, target, optimize);
     _ = buildRunGeneratorStep(b, generator_exe_artifact);
-    const dump_api_step = dumpApiStep(b);
-    const bindings_step = buildBindingsStep(b, generator_exe_artifact, dump_api_step);
+    const bindings_step = buildBindingsStep(b, generator_exe_artifact);
     _ = addModule(b, bindings_step, target, optimize);
     _ = buildExampleExtensionStep(b, target, optimize);
     _ = runExampleStep(b, target, optimize);
-
-    std.debug.print("{any}\n", .{areBindingsOudated(b)});
 }
-
-const GodotVersion = struct {
-    major: i64 = 0,
-    minor: i64 = 0,
-    patch: i64 = 0,
-    status: []const u8 = &.{},
-    build: []const u8 = &.{},
-};
-
-pub fn areBindingsOudated(b: *Build) bool {
-    b.build_root.handle.access("src/bindings/header.zig", .{}) catch return true;
-    const header = @import("src/bindings/header.zig");
-    if (!std.mem.eql(u8, header.generated_zig_version, builtin.zig_version_string)) return false;
-
-    const version = getGodotVersionString(b) catch return true;
-
-    return header.version.major != version.major or
-        header.version.minor != version.minor or
-        header.version.patch != version.patch or
-        !std.mem.eql(u8, header.version.status, version.status) or
-        !std.mem.eql(u8, header.version.build, version.build);
-}
-
-pub fn getGodotVersionString(b: *Build) !GodotVersion {
-    const result = try std.process.Child.run(.{
-        .allocator = b.allocator,
-        .argv = &.{ "godot", "--version" },
-    });
-
-    var iterator = std.mem.splitSequence(u8, result.stdout, ".");
-    var part: ?[]const u8 = undefined;
-    var version: GodotVersion = .{};
-
-    major_minor_patch_block: {
-        part = iterator.first();
-        version.major = std.fmt.parseInt(i64, part.?, 10) catch return error.InvalidVersion;
-        part = iterator.next();
-        if (part == null) return error.InvalidVersion;
-        version.minor = std.fmt.parseInt(i64, part.?, 10) catch return error.InvalidVersion;
-        part = iterator.next();
-        if (part == null) return error.InvalidVersion;
-        version.patch = std.fmt.parseInt(i64, part.?, 10) catch break :major_minor_patch_block;
-        part = iterator.next();
-    }
-
-    status_build_block: {
-        if (part == null) break :status_build_block;
-        version.status = part.?;
-        part = iterator.next();
-        if (part == null) break :status_build_block;
-        version.build = part.?;
-    }
-
-    return version;
-}
-
-// pub fn parseGodotVersion(version_text: []const u8) GodotVersion {
-//     // var version = GodotVersion{};
-
-//     // const iterator = std.mem.splitSequence(u8, version_text, ".");
-
-//     // const first_part = iterator.first();
-
-//     return .{};
-// }
