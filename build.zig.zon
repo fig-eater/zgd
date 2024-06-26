@@ -5,7 +5,7 @@
     .dependencies = .{
         .overloading = .{
             .url = "https://github.com/fig-eater/zig-function-overloading/archive/refs/heads/main.tar.gz",
-            .hash = "12209480049cd2dfdeef154c21469ab3585ff474eacfc5d38a4f7746c9f7d8f8ccef",
+            .hash = "12206eeb76062d0423ec4c2b8d13f275a90ddbd21981163ceae4def36d0245ca6644",
         },
     },
     .paths = .{

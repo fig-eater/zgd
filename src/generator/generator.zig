@@ -94,6 +94,17 @@ pub fn generate(
 
 }
 
+// pub fn generateVersionFile(allocator: Allocator, output_directory: Dir) void {
+//     const result = try std.process.Child.run(.{
+//         .allocator = allocator,
+//         .argv = &.{ "godot", "--version" },
+//     });
+//     const result = try std.process.Child.run(.{});
+//     const version_file = try output_directory.createFile("version", .{});
+//     defer version_file.close();
+//     // version_file.writer();
+// }
+
 fn initBuiltinSizeMap(
     allocator: Allocator,
     class_size_configurations: []Api.BuiltinClassSize,

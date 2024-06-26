@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const Build = std.Build;
 const Step = Build.Step;
@@ -158,7 +159,7 @@ pub fn dumpApiStep(b: *std.Build) *Step {
     return dump_api_step;
 }
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     // Config
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -170,22 +171,71 @@ pub fn build(b: *std.Build) void {
     _ = addModule(b, bindings_step, target, optimize);
     _ = buildExampleExtensionStep(b, target, optimize);
     _ = runExampleStep(b, target, optimize);
+
+    std.debug.print("{any}\n", .{areBindingsOudated(b)});
 }
 
 const GodotVersion = struct {
-    major: u32,
-    minor: u32,
-    patch: u32,
-    status: []const u8,
-    build: []const u8,
+    major: i64 = 0,
+    minor: i64 = 0,
+    patch: i64 = 0,
+    status: []const u8 = &.{},
+    build: []const u8 = &.{},
 };
 
-pub fn parseGodotVersion(version_text: []const u8) GodotVersion {
-    for (version_text) |c| {
-        switch (c) {
-            '0'...'9' => {},
-            '.' => {},
-            else => error.ParseError,
-        }
-    }
+pub fn areBindingsOudated(b: *Build) bool {
+    b.build_root.handle.access("src/bindings/header.zig", .{}) catch return true;
+    const header = @import("src/bindings/header.zig");
+    if (!std.mem.eql(u8, header.generated_zig_version, builtin.zig_version_string)) return false;
+
+    const version = getGodotVersionString(b) catch return true;
+
+    return header.version.major != version.major or
+        header.version.minor != version.minor or
+        header.version.patch != version.patch or
+        !std.mem.eql(u8, header.version.status, version.status) or
+        !std.mem.eql(u8, header.version.build, version.build);
 }
+
+pub fn getGodotVersionString(b: *Build) !GodotVersion {
+    const result = try std.process.Child.run(.{
+        .allocator = b.allocator,
+        .argv = &.{ "godot", "--version" },
+    });
+
+    var iterator = std.mem.splitSequence(u8, result.stdout, ".");
+    var part: ?[]const u8 = undefined;
+    var version: GodotVersion = .{};
+
+    major_minor_patch_block: {
+        part = iterator.first();
+        version.major = std.fmt.parseInt(i64, part.?, 10) catch return error.InvalidVersion;
+        part = iterator.next();
+        if (part == null) return error.InvalidVersion;
+        version.minor = std.fmt.parseInt(i64, part.?, 10) catch return error.InvalidVersion;
+        part = iterator.next();
+        if (part == null) return error.InvalidVersion;
+        version.patch = std.fmt.parseInt(i64, part.?, 10) catch break :major_minor_patch_block;
+        part = iterator.next();
+    }
+
+    status_build_block: {
+        if (part == null) break :status_build_block;
+        version.status = part.?;
+        part = iterator.next();
+        if (part == null) break :status_build_block;
+        version.build = part.?;
+    }
+
+    return version;
+}
+
+// pub fn parseGodotVersion(version_text: []const u8) GodotVersion {
+//     // var version = GodotVersion{};
+
+//     // const iterator = std.mem.splitSequence(u8, version_text, ".");
+
+//     // const first_part = iterator.first();
+
+//     return .{};
+// }
