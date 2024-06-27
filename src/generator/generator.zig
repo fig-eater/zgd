@@ -13,41 +13,31 @@ const type_map = std.StaticStringMap([]const u8).initComptime(.{
     .{ "float", "f32" },
 });
 
-pub fn getBuildConfig() !void {
-    // std.debug.print("{any}\n", @import("config").double_precision);
-}
-
 pub fn generate(allocator: Allocator, output_directory: Dir, build_config: common.BuildConfig) !void {
-    try getBuildConfig();
     try Api.dump(allocator, output_directory);
     const parsed_api = try Api.parse(allocator, output_directory);
     defer parsed_api.deinit();
+    const api = parsed_api.json.value;
 
     // create root module file
     const file = try output_directory.createFile("godot.zig", .{});
     defer file.close();
     const godot_writer = file.writer();
-
-    try @import("generators/header.zig").generate(
-        output_directory,
-        parsed_api.json.value.header,
-    );
-    try @import("generators/global_enums.zig").generate(
-        output_directory,
-        parsed_api.json.value.global_enums,
-    );
+    try @import("generators/header.zig").generate(output_directory, api.header);
+    try @import("generators/global_enums.zig").generate(output_directory, api.global_enums);
     try @import("generators/utility_functions.zig").generate(
         output_directory,
-        parsed_api.json.value.utility_functions,
+        api.utility_functions,
     );
     try @import("generators/builtin_classes.zig").generate(
         allocator,
         output_directory,
         godot_writer,
-        parsed_api.json.value,
+        api,
         build_config,
     );
-    // try writeTypes(gen, writer);
+    try @import("generators/global_constants.zig").generate(godot_writer, api.global_constants);
+    try @import("generators/classes.zig").generate(allocator, godot_writer, output_directory, api.classes);
 
     try generateVersionFile(allocator, output_directory);
 }

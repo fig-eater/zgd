@@ -64,7 +64,8 @@ pub const Enum = struct {
 
 pub const GlobalConstant = struct {
     name: string,
-    value: string,
+    value: i64,
+    is_bitfield: bool,
 };
 
 pub const Function = struct {

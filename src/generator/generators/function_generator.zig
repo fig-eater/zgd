@@ -61,7 +61,7 @@ pub fn writeConstructor(writer: anytype, internal_writer: anytype, class_name_id
 }
 
 // TODO add support for default parameters (use structs with defaults)
-pub fn writeFunctionArgs(writer: anytype, args: []Api.Function.Argument) !void {
+pub fn writeFunctionArgs(writer: anytype, args: []const Api.Function.Argument) !void {
     if (args.len == 0) return;
     var name_formatter: common.IdFormatter = undefined;
     var type_formatter: common.IdFormatter = undefined;
@@ -75,7 +75,7 @@ pub fn writeFunctionArgs(writer: anytype, args: []Api.Function.Argument) !void {
     }
 }
 
-pub fn writeCallArgs(writer: anytype, args: []Api.Function.Argument) !void {
+pub fn writeCallArgs(writer: anytype, args: []const Api.Function.Argument) !void {
     if (args.len == 0) return;
     var name_formatter: common.IdFormatter = undefined;
     name_formatter.data = args[0].name;
@@ -86,7 +86,7 @@ pub fn writeCallArgs(writer: anytype, args: []Api.Function.Argument) !void {
     }
 }
 
-pub fn writeArgsDocs(writer: anytype, args: []Api.Function.Argument) !void {
+pub fn writeArgsDocs(writer: anytype, args: []const Api.Function.Argument) !void {
     if (args.len == 0) return;
     var name_formatter: common.IdFormatter = undefined;
     var type_formatter: common.IdFormatter = undefined;

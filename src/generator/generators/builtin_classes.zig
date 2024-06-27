@@ -28,14 +28,20 @@ pub fn generate(
     api: Api,
     build_config: common.BuildConfig,
 ) !void {
-    var built_in_size_map = try initBuiltinSizeMap(allocator, api.builtin_class_sizes, build_config);
+    var built_in_size_map = try initBuiltinSizeMap(
+        allocator,
+        api.builtin_class_sizes,
+        build_config,
+    );
     defer built_in_size_map.deinit();
 
     try common.makeDirIfMissing(output_directory, "classes");
-    const classes_dir = try output_directory.openDir("classes", .{});
+    var classes_dir = try output_directory.openDir("classes", .{});
+    defer classes_dir.close();
 
     try common.makeDirIfMissing(classes_dir, "internal");
-    const internal_dir = try classes_dir.openDir("internal", .{});
+    var internal_dir = try classes_dir.openDir("internal", .{});
+    defer internal_dir.close();
 
     for (api.builtin_classes) |class| {
         const handler = builtin_class_custom_generator_map.get(class.name) orelse
@@ -211,7 +217,7 @@ fn generateBuiltinClassFloat(
 
 fn initBuiltinSizeMap(
     allocator: Allocator,
-    class_size_configurations: []Api.BuiltinClassSize,
+    class_size_configurations: []const Api.BuiltinClassSize,
     build_config: common.BuildConfig,
 ) !std.StringHashMap(usize) {
     var class_size_map = std.StringHashMap(usize).init(allocator);

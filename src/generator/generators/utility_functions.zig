@@ -3,7 +3,7 @@ const func_gen = @import("function_generator.zig");
 const Api = @import("../Api.zig");
 const Dir = std.fs.Dir;
 
-pub fn generate(output_directory: Dir, functions: []Api.Function) !void {
+pub fn generate(output_directory: Dir, functions: []const Api.Function) !void {
     const file = try output_directory.createFile("utility_functions.zig", .{});
     defer file.close();
     const writer = file.writer();

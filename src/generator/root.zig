@@ -57,9 +57,11 @@ pub fn main() !void {
         else => return err,
     };
 
+    var output_directory = try std.fs.openDirAbsolute(output_directory_full_path, .{});
+    defer output_directory.close();
     try generator.generate(
         allocator,
-        try std.fs.openDirAbsolute(output_directory_full_path, .{}),
+        output_directory,
         build_config,
     );
 }
