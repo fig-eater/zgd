@@ -23,7 +23,8 @@ var builtin_class_custom_generator_map = std.StaticStringMap(BuiltinClassGenerat
 
 pub fn generate(
     allocator: Allocator,
-    output_directory: Dir,
+    classes_dir: Dir,
+    classes_internal_dir: Dir,
     godot_writer: FileWriter,
     api: Api,
     build_config: common.BuildConfig,
@@ -35,21 +36,13 @@ pub fn generate(
     );
     defer built_in_size_map.deinit();
 
-    try common.makeDirIfMissing(output_directory, "classes");
-    var classes_dir = try output_directory.openDir("classes", .{});
-    defer classes_dir.close();
-
-    try common.makeDirIfMissing(classes_dir, "internal");
-    var internal_dir = try classes_dir.openDir("internal", .{});
-    defer internal_dir.close();
-
     for (api.builtin_classes) |class| {
         const handler = builtin_class_custom_generator_map.get(class.name) orelse
             &generateBuiltinClass;
         try handler(
             allocator,
             classes_dir,
-            internal_dir,
+            classes_internal_dir,
             class,
             godot_writer,
             built_in_size_map.get(class.name) orelse 0,

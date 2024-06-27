@@ -29,15 +29,15 @@ pub fn generate(allocator: Allocator, output_directory: Dir, build_config: commo
         output_directory,
         api.utility_functions,
     );
-    try @import("generators/builtin_classes.zig").generate(
+    try @import("generators/global_constants.zig").generate(godot_writer, api.global_constants);
+    try @import("generators/classes.zig").generate(
         allocator,
-        output_directory,
         godot_writer,
+        output_directory,
         api,
         build_config,
     );
-    try @import("generators/global_constants.zig").generate(godot_writer, api.global_constants);
-    try @import("generators/classes.zig").generate(allocator, godot_writer, output_directory, api.classes);
+    try @import("generators/native_structures.zig").generate(godot_writer, api.native_structures);
 
     try generateVersionFile(allocator, output_directory);
 }
