@@ -54,7 +54,9 @@ pub fn buildBindingsStep(
     generator_exe_artifact: *Step.InstallArtifact,
 ) *Step {
     const bindings_step = b.step("bindings", "Build godot bindings");
-    const force = b.option(bool, "regen-zigodot", "Force regeneration of godot bindings");
+    const force = b.option(bool, "zgd-force", "Force regeneration of godot bindings");
+    // const double_precision = b.option(bool, "zgd-double-precision", "Force regeneration of godot bindings");
+
     if ((force != null and force.?) or !areBindingsUpToDate(b)) {
         bindings_step.dependOn(&generator_exe_artifact.step);
 
@@ -174,6 +176,7 @@ pub fn areBindingsUpToDate(b: *Build) bool {
 }
 
 pub fn build(b: *std.Build) !void {
+
     // Config
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});

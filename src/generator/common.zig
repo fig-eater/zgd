@@ -1,6 +1,26 @@
 const std = @import("std");
 const Dir = std.fs.Dir;
 
+pub const internal_name = "internal";
+pub const opaque_field_name = "__opaque";
+pub const function_bindings_name = "bindings";
+pub const IdFormatter = std.fmt.Formatter(formatIdSpecial);
+
+pub const BuildConfig = enum {
+    float_32,
+    float_64,
+    double_32,
+    double_64,
+};
+
+/// Return bytes without the prefix
+pub fn withoutPrefix(bytes: []const u8, prefix: []const u8) []const u8 {
+    if (bytes.len > prefix.len and std.mem.startsWith(u8, bytes, prefix)) {
+        return bytes[prefix.len..];
+    }
+    return bytes;
+}
+
 pub fn formatIdSpecial(
     data: []const u8,
     comptime fmt: []const u8,
@@ -74,7 +94,14 @@ pub fn formatCamelCase(
                     break :rest_start_block i + 1;
                 },
                 // skip whitespace or separator
-                '_', ' ', '\t', '\n', '\r', std.ascii.control_code.vt, std.ascii.control_code.ff => {},
+                '_',
+                ' ',
+                '\t',
+                '\n',
+                '\r',
+                std.ascii.control_code.vt,
+                std.ascii.control_code.ff,
+                => {},
                 else => {
                     try writer.writeByte(c);
                     break :rest_start_block i + 1;
@@ -93,7 +120,14 @@ pub fn formatCamelCase(
                     word_start = false;
                 },
                 // white space or separator
-                '_', ' ', '\t', '\n', '\r', std.ascii.control_code.vt, std.ascii.control_code.ff => word_start = true,
+                '_',
+                ' ',
+                '\t',
+                '\n',
+                '\r',
+                std.ascii.control_code.vt,
+                std.ascii.control_code.ff,
+                => word_start = true,
                 else => {
                     try writer.writeByte(c);
                     word_start = false;
@@ -120,13 +154,27 @@ pub fn formatPascalCase(
                 word_start = false;
             },
             // white space or separator
-            '_', ' ', '\t', '\n', '\r', std.ascii.control_code.vt, std.ascii.control_code.ff => word_start = true,
+            '_',
+            ' ',
+            '\t',
+            '\n',
+            '\r',
+            std.ascii.control_code.vt,
+            std.ascii.control_code.ff,
+            => word_start = true,
             else => {
                 try writer.writeByte(c);
                 word_start = false;
             },
         }
     }
+}
+
+pub fn makeDirIfMissing(dir: Dir, path: []const u8) !void {
+    dir.makeDir(path) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
 }
 
 fn isValidIdCaseInsensitive(bytes: []const u8) bool {

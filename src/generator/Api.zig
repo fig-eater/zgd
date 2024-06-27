@@ -1,7 +1,15 @@
+const Api = @This();
+const std = @import("std");
+const common = @import("common.zig");
+const Allocator = std.mem.Allocator;
+const Dir = std.fs.Dir;
+// 8mb should be large enough for the whole extension_api.json file
+const api_read_buffer_starting_size = 1024 * 1024 * 8;
+
 header: Header,
 builtin_class_sizes: []BuiltinClassSize,
 builtin_class_member_offsets: []BuiltinClassMemberOffset,
-global_enums: []GlobalEnum,
+global_enums: []Enum,
 global_constants: []GlobalConstant,
 utility_functions: []Function,
 builtin_classes: []BuiltinClass,
@@ -44,9 +52,9 @@ pub const BuiltinClassMemberOffset = struct {
     };
 };
 
-pub const GlobalEnum = struct {
+pub const Enum = struct {
     name: string,
-    is_bitfield: bool,
+    is_bitfield: bool = false, // only used for global enum
     values: []Value,
     pub const Value = struct {
         name: string,
@@ -99,15 +107,6 @@ pub const BuiltinClass = struct {
         value: string,
     };
 
-    pub const Enum = struct {
-        name: string,
-        values: []Value,
-        pub const Value = struct {
-            name: string,
-            value: int,
-        };
-    };
-
     pub const Operator = struct {
         name: string,
         right_type: string = "",
@@ -116,11 +115,7 @@ pub const BuiltinClass = struct {
 
     pub const Constructor = struct {
         index: int,
-        arguments: ?[]Argument = null,
-        pub const Argument = struct {
-            name: string,
-            type: string,
-        };
+        arguments: ?[]Function.Argument = null,
     };
 };
 
@@ -186,4 +181,75 @@ pub const Singleton = struct {
 pub const NativeStructure = struct {
     name: string,
     format: string,
+};
+
+pub fn dump(allocator: Allocator, output_directory: Dir) !void {
+    try common.makeDirIfMissing(output_directory, "api");
+    const api_dir_string = try output_directory.realpathAlloc(allocator, "api");
+    defer allocator.free(api_dir_string);
+    const api_dir = try output_directory.openDir("api", .{});
+
+    var dump_api_process = std.process.Child.init(
+        &.{ "godot", "--headless", "--dump-extension-api" },
+        allocator,
+    );
+    dump_api_process.cwd = api_dir_string;
+    dump_api_process.cwd_dir = api_dir;
+    dump_api_process.stderr_behavior = .Ignore;
+    dump_api_process.stdout_behavior = .Ignore;
+    dump_api_process.stdin_behavior = .Ignore;
+    try dump_api_process.spawn();
+
+    var dump_interface_process = std.process.Child.init(
+        &.{ "godot", "--headless", "--dump-gdextension-interface" },
+        allocator,
+    );
+    dump_interface_process.cwd = api_dir_string;
+    dump_interface_process.cwd_dir = api_dir;
+    dump_interface_process.stderr_behavior = .Ignore;
+    dump_interface_process.stdout_behavior = .Ignore;
+    dump_interface_process.stdin_behavior = .Ignore;
+    try dump_interface_process.spawn();
+
+    const api_term = try dump_api_process.wait();
+    if (api_term == .Exited and api_term.Exited != 0) {
+        _ = dump_interface_process.kill() catch {}; // ignore this error, returning error anyways
+        return error.FailDumpError;
+    }
+    const child_dump_term = try dump_interface_process.wait();
+    if (child_dump_term == .Exited and child_dump_term.Exited != 0) return error.FailDumpError;
+}
+
+pub fn parse(allocator: Allocator, output_directory: Dir) !ParsedApi {
+    const api_file = try output_directory.openFile("api/extension_api.json", .{});
+    const api_reader = api_file.reader();
+
+    var buffer = try allocator.alloc(u8, api_read_buffer_starting_size);
+
+    var total_bytes_read: usize = try api_reader.readAll(buffer);
+    while (total_bytes_read >= buffer.len) {
+        buffer = try allocator.realloc(buffer, buffer.len * 2);
+        total_bytes_read += try api_reader.readAll(buffer[total_bytes_read..]);
+    }
+
+    return .{
+        .allocator = allocator,
+        .json = try std.json.parseFromSlice(
+            Api,
+            allocator,
+            buffer[0..total_bytes_read],
+            .{},
+        ),
+        .buffer = buffer,
+    };
+}
+
+const ParsedApi = struct {
+    allocator: Allocator,
+    json: std.json.Parsed(Api),
+    buffer: []const u8,
+    pub fn deinit(self: @This()) void {
+        self.allocator.free(self.buffer);
+        self.json.deinit();
+    }
 };

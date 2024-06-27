@@ -35,7 +35,7 @@ compile_step.root_module.addImport("godot", zgd_dependency.module("zigodot"));
 Bindings will only be generated if they don't exist or mismatch the godot or zig
 version used.
 
-Include `-Dregen-zigodot=true` to force regeneration of bindings.
+Include `-Dzgd-force=true` to force regeneration of bindings.
 
 ## Also See
 
