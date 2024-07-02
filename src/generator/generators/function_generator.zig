@@ -13,7 +13,12 @@ pub fn writeFunction(writer: anytype, func: Api.Function) !void {
     }
 }
 
-pub fn writeConstructor(writer: anytype, internal_writer: anytype, class_name_id: []const u8, class: Api.BuiltinClass) !void {
+pub fn writeConstructor(
+    writer: anytype,
+    internal_writer: anytype,
+    class_name_id: []const u8,
+    class: Api.BuiltinClass,
+) !void {
     if (class.constructors.len == 1) { // write single constructor
         try writer.writeAll("pub inline fn init(");
         try internal_writer.writeAll("pub var init: *const fn (");
@@ -58,6 +63,11 @@ pub fn writeConstructor(writer: anytype, internal_writer: anytype, class_name_id
             try internal_writer.writeAll(");\n}\n");
         }
     }
+}
+
+pub fn writeMethod(writer: anytype, method: Api.Method) !void {
+    _ = writer;
+    _ = method;
 }
 
 // TODO add support for default parameters (use structs with defaults)

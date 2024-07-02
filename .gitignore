@@ -1,7 +1,7 @@
 .zig-cache/
 zig-out/
 
-api/
+api-dump/
 bindings/
 
 

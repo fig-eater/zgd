@@ -75,13 +75,37 @@ pub const Function = struct {
     arguments: ?[]Argument = null,
     category: ?string = null, // only for utility functions
     is_vararg: bool,
-    is_const: bool = true, // only for methods
+    is_const: bool = true, // only for methods in BuiltinClass
     is_static: bool = true, // only for methods
 
     pub const Argument = struct {
         name: string,
         type: string,
         default_value: ?string = null,
+    };
+};
+
+pub const Method = struct {
+    name: string,
+    is_const: bool,
+    is_static: bool,
+    is_vararg: bool,
+    is_virtual: bool,
+    hash: u64 = 0,
+    hash_compatibility: ?[]u64 = null,
+    return_value: ?ReturnValue = null,
+    arguments: ?[]Argument = null,
+
+    pub const Argument = struct {
+        name: string,
+        type: string,
+        meta: string = "",
+        default_value: string = "",
+    };
+    pub const ReturnValue = struct {
+        type: string,
+        meta: string = "",
+        default_value: string = "",
     };
 };
 
@@ -138,26 +162,7 @@ pub const Class = struct {
             value: int,
         },
     } = null,
-    methods: ?[]struct {
-        name: string,
-        is_const: bool,
-        is_static: bool,
-        is_vararg: bool,
-        is_virtual: bool,
-        hash: u64 = 0,
-        hash_compatibility: ?[]u64 = null,
-        return_value: ?struct {
-            type: string,
-            meta: string = "",
-            default_value: string = "",
-        } = null,
-        arguments: ?[]struct {
-            name: string,
-            type: string,
-            meta: string = "",
-            default_value: string = "",
-        } = null,
-    } = null,
+    methods: ?[]Method = null,
     signals: ?[]struct {
         name: string,
         arguments: ?[]struct {

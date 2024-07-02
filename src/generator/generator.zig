@@ -23,6 +23,9 @@ pub fn generate(allocator: Allocator, output_directory: Dir, build_config: commo
     const file = try output_directory.createFile("godot.zig", .{});
     defer file.close();
     const godot_writer = file.writer();
+
+    try writeInterface(godot_writer);
+
     try @import("generators/header.zig").generate(output_directory, api.header);
     try @import("generators/global_enums.zig").generate(output_directory, api.global_enums);
     try @import("generators/utility_functions.zig").generate(
@@ -59,4 +62,10 @@ pub fn generateVersionFile(allocator: Allocator, output_directory: Dir) !void {
         seq.first(),
         zig_version_string,
     });
+}
+
+pub fn writeInterface(godot_writer: anytype) !void {
+    try godot_writer.writeAll(
+        "pub const interface = @cImport(@cInclude(\"gdextension_interface.h\"));\n",
+    );
 }

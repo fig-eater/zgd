@@ -2,6 +2,7 @@ const std = @import("std");
 const Api = @import("../Api.zig");
 const common = @import("../common.zig");
 const builtin_classes = @import("builtin_classes.zig");
+const func_gen = @import("function_generator.zig");
 const Dir = std.fs.Dir;
 const Allocator = std.mem.Allocator;
 
@@ -68,12 +69,14 @@ pub fn generateClass(
     if (class.methods) |methods| {
         const internal_file_writer = internal_file.writer();
 
-        internal_file_writer.writeAll("pub const bindings: struct {\n");
-        for (methods) |method| {}
-        internal_file_writer.writeAll("} = undefined;\n");
+        try internal_file_writer.writeAll("pub const bindings: struct {\n");
+        for (methods) |method| {
+            try func_gen.writeMethod(writer, method);
+        }
+        try internal_file_writer.writeAll("} = undefined;\n");
     }
 
     // internal_file_writer
 
-    try writer.print("{s}\n", .{id_fmt});
+    // try writer.print("{s}\n", .{id_fmt});
 }

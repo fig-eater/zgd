@@ -6,9 +6,22 @@ const Step = Build.Step;
 const Target = Build.ResolvedTarget;
 const OptimizeMode = std.builtin.OptimizeMode;
 
+const BuildConfig = enum {
+    float_32,
+    float_64,
+    double_32,
+    double_64,
+};
+
+const Precision = enum { single, double };
+
 pub const zigodot_module_name = "godot";
 
+const zgd_godot_name = "zgd-godot";
+const zgd_godot_default = "godot";
+
 const bindings_dir = "src/bindings/";
+const api_dump_dir = "api-dump/";
 
 const zigodot_module_root = bindings_dir ++ "godot.zig";
 const bindings_header = bindings_dir ++ "header.zig";
@@ -51,22 +64,26 @@ pub fn buildRunGeneratorStep(b: *Build, generator_exe_artifact: *Step.InstallArt
 
 pub fn buildBindingsStep(
     b: *Build,
-    generator_exe_artifact: *Step.InstallArtifact,
+    options: struct {
+        dump_api_step: *Step,
+        generator_exe_artifact: *Step.InstallArtifact,
+        build_config: BuildConfig,
+        force_regen: bool,
+    },
 ) *Step {
-    const bindings_step = b.step("bindings", "Build godot bindings");
-    const force = b.option(bool, "zgd-force", "Force regeneration of godot bindings");
-    // const double_precision = b.option(bool, "zgd-double-precision", "Force regeneration of godot bindings");
+    const this_step = b.step("bindings", "Build godot bindings");
 
-    if ((force != null and force.?) or !areBindingsUpToDate(b)) {
-        bindings_step.dependOn(&generator_exe_artifact.step);
+    // TODO force rebuild if config is different than saved in version
 
-        // Command for building the bindings to the gen folder
-        const build_bindings_cmd = b.addRunArtifact(generator_exe_artifact.artifact);
-        build_bindings_cmd.addArgs(&.{b.dupePath(bindings_dir)});
-        bindings_step.dependOn(&build_bindings_cmd.step);
-    }
+    this_step.dependOn(&options.generator_exe_artifact.step);
 
-    return bindings_step;
+    // Command for building the bindings to the gen folder
+    const build_bindings_cmd = b.addRunArtifact(options.generator_exe_artifact.artifact);
+    build_bindings_cmd.addArgs(&.{ b.dupePath(bindings_dir), @tagName(options.build_config) });
+
+    this_step.dependOn(options.dump_api_step);
+    this_step.dependOn(&build_bindings_cmd.step);
+    return this_step;
 }
 
 pub fn addModule(
@@ -94,8 +111,9 @@ pub fn addModule(
         .imports = &.{
             .{ .name = "overloading", .module = overloading_dependency.module("overloading") },
         },
+        .link_libc = true,
     });
-
+    module.addIncludePath(b.path("src/bindings/api/"));
     return module;
 }
 
@@ -143,7 +161,7 @@ pub fn runExampleStep(b: *Build, target: Target, optimize: OptimizeMode) *Step {
     return run_example_step;
 }
 
-pub fn areBindingsUpToDate(b: *Build) bool {
+pub fn areBindingsUpToDate(b: *Build, godot_path: []const u8) bool {
     const version_file = b.build_root.handle.openFile("src/bindings/version", .{}) catch
         return false;
     defer version_file.close();
@@ -164,7 +182,7 @@ pub fn areBindingsUpToDate(b: *Build) bool {
 
     const result = std.process.Child.run(.{
         .allocator = b.allocator,
-        .argv = &.{ "godot", "--version" },
+        .argv = &.{ godot_path, "--version" },
     }) catch return false;
     defer {
         b.allocator.free(result.stderr);
@@ -175,15 +193,127 @@ pub fn areBindingsUpToDate(b: *Build) bool {
         std.mem.eql(u8, zig_version_cached, builtin.zig_version_string));
 }
 
-pub fn build(b: *std.Build) !void {
+const DumpedApi = struct {
+    step: *Step,
+    api_file: Build.LazyPath,
+    interface_file: Build.LazyPath,
+};
+
+pub fn dumpApiStep(b: *Build, target: Target, godot_path: ?Build.LazyPath) DumpedApi {
+    const dump_api_step = b.step("dump-api", "Dump GDExtension api");
+
+    var dumped_api: DumpedApi = undefined;
+    dumped_api.step = dump_api_step;
+
+    { // dump extension_api
+        const extension_api_cmd = b.addSystemCommand(&.{});
+        if (godot_path) |p| {
+            extension_api_cmd.addFileArg(p);
+        } else {
+            extension_api_cmd.addArg("godot");
+        }
+        extension_api_cmd.addArgs(&.{ "--headless", "--dump-extension-api" });
+
+        const extension_api_file = extension_api_cmd.addOutputFileArg("extension_api.json");
+
+        extension_api_cmd.cwd = extension_api_file.dirname();
+        dump_api_step.dependOn(&extension_api_cmd.step);
+        dumped_api.api_file = extension_api_file;
+    }
+
+    { // dump and translate interface
+        const interface_cmd = b.addSystemCommand(&.{});
+        if (godot_path) |p| {
+            interface_cmd.addFileArg(p);
+        } else {
+            interface_cmd.addArg("godot");
+        }
+        interface_cmd.addArgs(&.{ "--headless", "--dump-gdextension-interface" });
+
+        const gdextension_interface_file = interface_cmd.addOutputFileArg("gdextension_interface.h");
+        interface_cmd.cwd = gdextension_interface_file.dirname();
+
+        const translate_interface_file = b.addTranslateC(.{
+            .root_source_file = gdextension_interface_file,
+            .optimize = .Debug,
+            .target = target,
+        });
+        dump_api_step.dependOn(&translate_interface_file.step);
+        dumped_api.interface_file = translate_interface_file.getOutput();
+    }
+
+    return dumped_api;
+}
+
+pub fn dumpApiMakeFn(step: *Step, prog_node: std.Progress.Node) anyerror!void {
+    const b = step.owner;
+
+    const file = try b.build_root.handle.createFile(api_dump_dir ++ "version", .{});
+    defer file.close();
+    const writer = file.writer();
+
+    const godot_path_input_option = b.user_input_options.get(zgd_godot_name);
+    const godot_path = if (godot_path_input_option) |opt| opt.value.scalar else zgd_godot_default;
+    var out_code: u8 = 0;
+    const std_out = try b.runAllowFail(&.{ godot_path, "--version" }, &out_code, .Ignore);
+    defer b.allocator.free(std_out);
+    var seq = std.mem.splitSequence(u8, std_out, "\n");
+    try writer.print("{s}\n", .{seq.first()});
+
+    step.evalZigProcess(&.{
+        b.graph.zig_exe,
+        "translate-c",
+        "--listen=-",
+    }, prog_node);
+}
+
+pub fn build(b: *Build) !void {
 
     // Config
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const zgd_godot = b.option(
+        []const u8,
+        zgd_godot_name,
+        "Path to godot to use for binding generation. Default: " ++ zgd_godot_default,
+    ) orelse zgd_godot_default;
+
+    const zgd_force = b.option(
+        bool,
+        "zgd-force",
+        "Force regeneration of godot bindings. Default: false",
+    ) orelse false;
+
+    const zgd_precision = b.option(
+        Precision,
+        "zgd-precision",
+        "Float precision for bindings. Default: single",
+    ) orelse .single;
+
+    const build_config: BuildConfig = switch (target.result.ptrBitWidth()) {
+        32 => switch (zgd_precision) {
+            .single => .float_32,
+            .double => .double_32,
+        },
+        64 => switch (zgd_precision) {
+            .single => .float_64,
+            .double => .double_64,
+        },
+        else => @panic("Target is not supported, must have bit width of 32 or 64"),
+    };
+
     const generator_exe_artifact = createGeneratorExeArtifact(b, target, optimize);
     _ = buildRunGeneratorStep(b, generator_exe_artifact);
-    const bindings_step = buildBindingsStep(b, generator_exe_artifact);
+    const dump_api = dumpApiStep(b, target, zgd_godot);
+    const bindings_step = buildBindingsStep(
+        b,
+        generator_exe_artifact,
+        dump_api.step,
+        zgd_force,
+        build_config,
+        zgd_godot,
+    );
     _ = addModule(b, bindings_step, target, optimize);
     _ = buildExampleExtensionStep(b, target, optimize);
     _ = runExampleStep(b, target, optimize);

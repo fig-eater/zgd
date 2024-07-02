@@ -35,7 +35,12 @@ compile_step.root_module.addImport("godot", zgd_dependency.module("zigodot"));
 Bindings will only be generated if they don't exist or mismatch the godot or zig
 version used.
 
-Include `-Dzgd-force=true` to force regeneration of bindings.
+Build Options:
+- `-Dzgd-force=true` to force regeneration of bindings.
+- `-Dzgd-build-config=[float_32|float_64|double_32|double_64]` Specify build
+configuration for bindings. This specifies float size for certain types
+(Vectors) and if building for 32-bit or 64-bit architecture. Leave empty to
+generate bindings using single precision floats with the local architecture.
 
 ## Also See
 

@@ -6,7 +6,7 @@ pub fn main() !void {
 }
 
 export fn cool() callconv(.C) void {
-    std.debug.print("{s}\n", .{@typeName(GD.Float)});
+    std.debug.print("{d}\n", .{GD.interface.GDEXTENSION_VARIANT_TYPE_VARIANT_MAX});
 }
 
 // pub fn example_library_init(
