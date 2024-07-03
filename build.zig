@@ -6,12 +6,7 @@ const Step = Build.Step;
 const Target = Build.ResolvedTarget;
 const OptimizeMode = std.builtin.OptimizeMode;
 
-const BuildConfig = enum {
-    float_32,
-    float_64,
-    double_32,
-    double_64,
-};
+const BuildConfig = @import("build/GenerateBindings.zig");
 
 const Precision = enum { single, double };
 
@@ -27,6 +22,59 @@ const zigodot_module_root = bindings_dir ++ "godot.zig";
 const bindings_header = bindings_dir ++ "header.zig";
 const generator_root = "src/generator/root.zig";
 const example_root = "src/example/example_extension.zig";
+
+pub fn build(b: *Build) !void {
+
+    // Config
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    const zgd_godot = b.option(
+        []const u8,
+        zgd_godot_name,
+        "Path to godot to use for binding generation. Default: " ++ zgd_godot_default,
+    ) orelse zgd_godot_default;
+
+    const zgd_force = b.option(
+        bool,
+        "zgd-force",
+        "Force regeneration of godot bindings. Default: false",
+    ) orelse false;
+
+    const zgd_precision = b.option(
+        Precision,
+        "zgd-precision",
+        "Float precision for bindings. Default: single",
+    ) orelse .single;
+
+    const build_config: BuildConfig = switch (target.result.ptrBitWidth()) {
+        32 => switch (zgd_precision) {
+            .single => .float_32,
+            .double => .double_32,
+        },
+        64 => switch (zgd_precision) {
+            .single => .float_64,
+            .double => .double_64,
+        },
+        else => @panic("Target is not supported, must have bit width of 32 or 64"),
+    };
+
+    const generator_exe_artifact = createGeneratorExeArtifact(b, target, optimize);
+    _ = buildRunGeneratorStep(b, generator_exe_artifact);
+    const dump_api = dumpApiStep(b, target, zgd_godot);
+    const bindings_step = buildBindingsStep(
+        b,
+        generator_exe_artifact,
+        dump_api.step,
+        zgd_force,
+        build_config,
+        zgd_godot,
+    );
+
+    _ = addModule(b, bindings_step, target, optimize);
+    _ = buildExampleExtensionStep(b, target, optimize);
+    _ = runExampleStep(b, target, optimize);
+}
 
 pub fn createGeneratorExeArtifact(
     b: *Build,
@@ -265,56 +313,4 @@ pub fn dumpApiMakeFn(step: *Step, prog_node: std.Progress.Node) anyerror!void {
         "translate-c",
         "--listen=-",
     }, prog_node);
-}
-
-pub fn build(b: *Build) !void {
-
-    // Config
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
-
-    const zgd_godot = b.option(
-        []const u8,
-        zgd_godot_name,
-        "Path to godot to use for binding generation. Default: " ++ zgd_godot_default,
-    ) orelse zgd_godot_default;
-
-    const zgd_force = b.option(
-        bool,
-        "zgd-force",
-        "Force regeneration of godot bindings. Default: false",
-    ) orelse false;
-
-    const zgd_precision = b.option(
-        Precision,
-        "zgd-precision",
-        "Float precision for bindings. Default: single",
-    ) orelse .single;
-
-    const build_config: BuildConfig = switch (target.result.ptrBitWidth()) {
-        32 => switch (zgd_precision) {
-            .single => .float_32,
-            .double => .double_32,
-        },
-        64 => switch (zgd_precision) {
-            .single => .float_64,
-            .double => .double_64,
-        },
-        else => @panic("Target is not supported, must have bit width of 32 or 64"),
-    };
-
-    const generator_exe_artifact = createGeneratorExeArtifact(b, target, optimize);
-    _ = buildRunGeneratorStep(b, generator_exe_artifact);
-    const dump_api = dumpApiStep(b, target, zgd_godot);
-    const bindings_step = buildBindingsStep(
-        b,
-        generator_exe_artifact,
-        dump_api.step,
-        zgd_force,
-        build_config,
-        zgd_godot,
-    );
-    _ = addModule(b, bindings_step, target, optimize);
-    _ = buildExampleExtensionStep(b, target, optimize);
-    _ = runExampleStep(b, target, optimize);
 }
