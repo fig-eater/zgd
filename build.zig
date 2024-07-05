@@ -12,7 +12,7 @@ const Step = Build.Step;
 const ResolvedTarget = Build.ResolvedTarget;
 const OptimizeMode = std.builtin.OptimizeMode;
 
-const BuildConfig = steps.generate_bindings.BuildConfig;
+const BuildConfig = @import("common.zig").BuildConfig;
 
 const Precision = enum { single, double };
 
@@ -65,6 +65,7 @@ pub fn build(b: *Build) !void {
     const generate_bindings_step = steps.generate_bindings.step(
         b,
         dump_api_result.step,
+        dump_api_result.api_file,
         build_config,
         zgd_force,
         b.path(bindings_dir),

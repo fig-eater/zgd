@@ -1,6 +1,6 @@
 const std = @import("std");
 const Api = @import("../Api.zig");
-const common = @import("../common.zig");
+const util = @import("../util.zig");
 const builtin_classes = @import("builtin_classes.zig");
 const func_gen = @import("function_generator.zig");
 const Dir = std.fs.Dir;
@@ -11,13 +11,13 @@ pub fn generate(
     godot_writer: anytype,
     output_directory: Dir,
     api: Api,
-    build_config: common.BuildConfig,
+    build_config: util.BuildConfig,
 ) !void {
-    try common.makeDirIfMissing(output_directory, "classes");
+    try util.makeDirIfMissing(output_directory, "classes");
     var classes_dir = try output_directory.openDir("classes", .{});
     defer classes_dir.close();
 
-    try common.makeDirIfMissing(classes_dir, "internal");
+    try util.makeDirIfMissing(classes_dir, "internal");
     var internal_dir = try classes_dir.openDir("internal", .{});
     defer internal_dir.close();
 
@@ -42,7 +42,7 @@ pub fn generateClass(
     internal_dir: Dir,
     class: Api.Class,
 ) !void {
-    var id_fmt: common.IdFormatter = undefined;
+    var id_fmt: util.IdFormatter = undefined;
     id_fmt.data = class.name;
     const class_name_id = try std.fmt.allocPrint(allocator, "{p}", .{id_fmt});
     defer allocator.free(class_name_id);
@@ -59,7 +59,7 @@ pub fn generateClass(
     // setup internal class file writer
     const internal_file_name = try std.fmt.allocPrint(
         allocator,
-        "{s}_" ++ common.internal_name ++ ".zig",
+        "{s}_" ++ util.internal_name ++ ".zig",
         .{class.name},
     );
     defer allocator.free(internal_file_name);

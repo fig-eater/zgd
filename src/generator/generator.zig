@@ -1,6 +1,6 @@
 const std = @import("std");
 const Api = @import("Api.zig");
-const common = @import("common.zig");
+const util = @import("util.zig");
 const Allocator = std.mem.Allocator;
 const Dir = std.fs.Dir;
 const zig_version_string = @import("builtin").zig_version_string;
@@ -13,18 +13,16 @@ const type_map = std.StaticStringMap([]const u8).initComptime(.{
     .{ "float", "f32" },
 });
 
-pub fn generate(allocator: Allocator, output_directory: Dir, build_config: common.BuildConfig) !void {
-    try Api.dump(allocator, output_directory);
-    const parsed_api = try Api.parse(allocator, output_directory);
-    defer parsed_api.deinit();
-    const api = parsed_api.json.value;
-
+pub fn generate(
+    allocator: Allocator,
+    api: Api,
+    build_config: util.BuildConfig,
+    output_directory: Dir,
+) !void {
     // create root module file
-    const file = try output_directory.createFile("godot.zig", .{});
-    defer file.close();
-    const godot_writer = file.writer();
-
-    try writeInterface(godot_writer);
+    const godot_file = try output_directory.createFile("godot.zig", .{});
+    defer godot_file.close();
+    const godot_writer = godot_file.writer();
 
     try @import("generators/header.zig").generate(output_directory, api.header);
     try @import("generators/global_enums.zig").generate(output_directory, api.global_enums);
@@ -41,6 +39,8 @@ pub fn generate(allocator: Allocator, output_directory: Dir, build_config: commo
         build_config,
     );
     try @import("generators/native_structures.zig").generate(godot_writer, api.native_structures);
+
+    try @import("generators/interface.zig").generate(output_directory);
 
     try generateVersionFile(allocator, output_directory);
 }
@@ -62,10 +62,4 @@ pub fn generateVersionFile(allocator: Allocator, output_directory: Dir) !void {
         seq.first(),
         zig_version_string,
     });
-}
-
-pub fn writeInterface(godot_writer: anytype) !void {
-    try godot_writer.writeAll(
-        "pub const interface = @cImport(@cInclude(\"gdextension_interface.h\"));\n",
-    );
 }

@@ -1,19 +1,14 @@
 const std = @import("std");
+const BuildConfig = @import("../common.zig").BuildConfig;
 const Build = std.Build;
 const Step = Build.Step;
 
 const generator_root = "src/generator/root.zig";
 
-pub const BuildConfig = enum {
-    float_32,
-    float_64,
-    double_32,
-    double_64,
-};
-
 pub fn step(
     b: *Build,
     dump_api_step: *Step,
+    api_file: Build.LazyPath,
     build_config: BuildConfig,
     force_regen: bool,
     bindings_directory: Build.LazyPath,
@@ -21,20 +16,21 @@ pub fn step(
     optimize: std.builtin.OptimizeMode,
     gdextension_interface_module: *Build.Module,
 ) *Step {
-    const generator = makeGeneratorExe(b, target, optimize, gdextension_interface_module);
+    const generate_bindings_step = b.step("bindings", "generate godot bindings");
 
-    const generate_bindings_step = b.step("bindings", "Build godot bindings");
+    const generator = makeGeneratorExe(b, target, optimize, gdextension_interface_module);
 
     _ = force_regen;
 
     // TODO force rebuild if config is different than saved in version
 
-    generate_bindings_step.dependOn(&generator.step);
+    // generate_bindings_step.dependOn(&generator.step);
 
     // Command for building the bindings to the gen folder
     const build_bindings_cmd = b.addRunArtifact(generator);
-    build_bindings_cmd.addFileArg(bindings_directory);
     build_bindings_cmd.addArg(@tagName(build_config));
+    build_bindings_cmd.addFileArg(api_file);
+    build_bindings_cmd.addFileArg(bindings_directory);
 
     generate_bindings_step.dependOn(dump_api_step);
     generate_bindings_step.dependOn(&build_bindings_cmd.step);
@@ -53,6 +49,10 @@ fn makeGeneratorExe(
         .target = target,
         .optimize = optimize,
     });
-    generator_exe.root_module.addImport("gd", gdextension_interface_module);
+    generator_exe.root_module.addImport("gdextension_interface", gdextension_interface_module);
+
+    const common_module = b.createModule(.{ .root_source_file = b.path("common.zig") });
+
+    generator_exe.root_module.addImport("common", common_module);
     return generator_exe;
 }

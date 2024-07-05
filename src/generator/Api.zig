@@ -1,6 +1,5 @@
 const Api = @This();
 const std = @import("std");
-const common = @import("common.zig");
 const Allocator = std.mem.Allocator;
 const Dir = std.fs.Dir;
 // 8mb should be large enough for the whole extension_api.json file
@@ -189,47 +188,7 @@ pub const NativeStructure = struct {
     format: string,
 };
 
-pub fn dump(allocator: Allocator, output_directory: Dir) !void {
-    try common.makeDirIfMissing(output_directory, "api");
-    const api_dir_string = try output_directory.realpathAlloc(allocator, "api");
-    defer allocator.free(api_dir_string);
-    const api_dir = try output_directory.openDir("api", .{});
-
-    var dump_api_process = std.process.Child.init(
-        &.{ "godot", "--headless", "--dump-extension-api" },
-        allocator,
-    );
-    dump_api_process.cwd = api_dir_string;
-    dump_api_process.cwd_dir = api_dir;
-    dump_api_process.stderr_behavior = .Ignore;
-    dump_api_process.stdout_behavior = .Ignore;
-    dump_api_process.stdin_behavior = .Ignore;
-    try dump_api_process.spawn();
-
-    var dump_interface_process = std.process.Child.init(
-        &.{ "godot", "--headless", "--dump-gdextension-interface" },
-        allocator,
-    );
-    dump_interface_process.cwd = api_dir_string;
-    dump_interface_process.cwd_dir = api_dir;
-    dump_interface_process.stderr_behavior = .Ignore;
-    dump_interface_process.stdout_behavior = .Ignore;
-    dump_interface_process.stdin_behavior = .Ignore;
-    try dump_interface_process.spawn();
-
-    const api_term = try dump_api_process.wait();
-    if (api_term == .Exited and api_term.Exited != 0) {
-        _ = dump_interface_process.kill() catch {}; // ignore this error, returning error anyways
-        return error.FailDumpError;
-    }
-    const child_dump_term = try dump_interface_process.wait();
-    if (child_dump_term == .Exited and child_dump_term.Exited != 0) return error.FailDumpError;
-}
-
-pub fn parse(allocator: Allocator, output_directory: Dir) !ParsedApi {
-    const api_file = try output_directory.openFile("api/extension_api.json", .{});
-    const api_reader = api_file.reader();
-
+pub fn parse(allocator: Allocator, api_reader: anytype) !ParsedApi {
     var buffer = try allocator.alloc(u8, api_read_buffer_starting_size);
 
     var total_bytes_read: usize = try api_reader.readAll(buffer);

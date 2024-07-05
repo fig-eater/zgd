@@ -1,17 +1,11 @@
 const std = @import("std");
-const Dir = std.fs.Dir;
+pub const BuildConfig = @import("common").BuildConfig;
 
+const Dir = std.fs.Dir;
 pub const internal_name = "internal";
 pub const opaque_field_name = "__opaque";
 pub const function_bindings_name = "bindings";
 pub const IdFormatter = std.fmt.Formatter(formatIdSpecial);
-
-pub const BuildConfig = enum {
-    float_32,
-    float_64,
-    double_32,
-    double_64,
-};
 
 /// Return bytes without the prefix
 pub fn withoutPrefix(bytes: []const u8, prefix: []const u8) []const u8 {
@@ -168,6 +162,13 @@ pub fn formatPascalCase(
             },
         }
     }
+}
+
+pub fn makeDirAbsoluteIfMissing(path: []const u8) !void {
+    std.fs.makeDirAbsolute(path) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
 }
 
 pub fn makeDirIfMissing(dir: Dir, path: []const u8) !void {

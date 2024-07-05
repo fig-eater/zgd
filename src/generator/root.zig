@@ -1,11 +1,21 @@
 const std = @import("std");
 const generator = @import("generator.zig");
-const common = @import("common.zig");
+const util = @import("util.zig");
+const Api = @import("Api.zig");
+
 const heap = std.heap;
 const Allocator = std.mem.Allocator;
 const AnyReader = std.io.AnyReader;
 
 const BuildConfigError = error{ InvalidBuildConfigError, CouldNotInferBuildConfig };
+
+const ArgIndices = enum {
+    exe,
+    build_config,
+    api_path,
+    output_path,
+};
+const expected_arg_count = std.meta.fields(ArgIndices).len;
 
 pub fn main() !void {
     var gpa = heap.GeneralPurposeAllocator(.{}){};
@@ -18,62 +28,46 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
-    if (args.len < 2) {
-        printUsage(args[0]);
+    if (args.len != expected_arg_count) {
+        std.debug.print(
+            "Error: Incorrect arg count got {d} expected {d}\n",
+            .{ args.len, expected_arg_count },
+        );
+        printUsage(getArg(args, .exe));
         std.process.exit(1);
     }
 
-    const build_config_string: ?[]const u8 = if (args.len >= 3) args[2] else null;
-    const build_config = getBuildConfig(build_config_string) catch |err| switch (err) {
-        BuildConfigError.InvalidBuildConfigError => {
-            printUsage(args[0]);
-            std.debug.print("Error: Invalid Build Configuration \"{s}\"\n", .{
-                build_config_string orelse "",
-            });
-            std.process.exit(1);
-        },
-        BuildConfigError.CouldNotInferBuildConfig => {
-            printUsage(args[0]);
-            std.debug.print("Error: Could not infer build configuration." ++
-                " Pass in build configuration as second argument\n", .{});
-            std.process.exit(1);
-        },
-    };
+    var output_dir = try getOutputDirectory(getArg(args, .output_path));
+    defer output_dir.close();
+    const build_config = getBuildConfig(args);
 
-    const output_directory_full_path = if (std.fs.path.isAbsolute(args[1]))
-        args[1]
-    else output_directory_full_path: {
-        std.fs.cwd().makeDir(args[1]) catch |err| switch (err) {
-            error.PathAlreadyExists => {},
-            else => return err,
-        };
-        break :output_directory_full_path try std.fs.cwd().realpathAlloc(allocator, args[1]);
-    };
-    defer if (output_directory_full_path.ptr != args[1].ptr)
-        allocator.free(output_directory_full_path);
-
-    std.fs.makeDirAbsolute(output_directory_full_path) catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => return err,
-    };
-
-    var output_directory = try std.fs.openDirAbsolute(output_directory_full_path, .{});
-    defer output_directory.close();
+    const api_path = getArg(args, .api_path);
+    const api_file = if (std.fs.path.isAbsolute(api_path))
+        try std.fs.openFileAbsolute(api_path, .{})
+    else
+        try std.fs.cwd().openFile(api_path, .{});
+    defer api_file.close();
+    const parsed_api = try Api.parse(allocator, api_file.reader());
+    defer parsed_api.deinit();
     try generator.generate(
         allocator,
-        output_directory,
+        parsed_api.json.value,
         build_config,
+        output_dir,
     );
 }
 
 pub fn printUsage(arg0: []const u8) void {
-    std.debug.print("usage: {s} OUTPUT_PATH [" ++ buildConfigUsageString() ++ "]\n", .{arg0});
+    std.debug.print(
+        "usage: {s} [" ++ buildConfigUsageString() ++ "] API_PATH OUTPUT_PATH\n",
+        .{arg0},
+    );
 }
 
 fn buildConfigUsageString() []const u8 {
     comptime {
         var config_string: []const u8 = &.{};
-        const configs = @typeInfo(common.BuildConfig).Enum.fields;
+        const configs = @typeInfo(util.BuildConfig).Enum.fields;
         for (configs) |config| {
             config_string = config_string ++ config.name ++ "|";
         }
@@ -81,20 +75,26 @@ fn buildConfigUsageString() []const u8 {
     }
 }
 
-fn getBuildConfig(string: ?[]const u8) BuildConfigError!common.BuildConfig {
-    if (string) |str| {
-        const configs = @typeInfo(common.BuildConfig).Enum.fields;
-        inline for (configs) |field| {
-            if (std.mem.eql(u8, field.name, str)) {
-                return @enumFromInt(field.value);
-            }
-        }
-        return BuildConfigError.InvalidBuildConfigError;
+fn getBuildConfig(args: [][:0]u8) util.BuildConfig {
+    std.debug.assert(args.len == expected_arg_count);
+    const build_config_string = getArg(args, .build_config);
+    return std.meta.stringToEnum(util.BuildConfig, build_config_string) orelse {
+        printUsage(getArg(args, .exe));
+        std.debug.print("Error: Invalid Build Configuration \"{s}\"\n", .{build_config_string});
+        std.process.exit(@truncate(@intFromError(BuildConfigError.InvalidBuildConfigError)));
+    };
+}
+
+fn getOutputDirectory(path: []const u8) !std.fs.Dir {
+    if (std.fs.path.isAbsolute(path)) {
+        try util.makeDirAbsoluteIfMissing(path);
+        return try std.fs.openDirAbsolute(path, .{});
     } else {
-        if (@sizeOf(usize) == 4)
-            return .float_32
-        else if (@sizeOf(usize) == 8)
-            return .float_64;
-        return BuildConfigError.CouldNotInferBuildConfig;
+        try util.makeDirIfMissing(std.fs.cwd(), path);
+        return try std.fs.cwd().openDir(path, .{});
     }
+}
+
+fn getArg(args: [][:0]u8, arg: ArgIndices) [:0]u8 {
+    return args[@intFromEnum(arg)];
 }

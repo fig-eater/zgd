@@ -1,7 +1,7 @@
 const std = @import("std");
 const func_gen = @import("function_generator.zig");
 const Api = @import("../Api.zig");
-const common = @import("../common.zig");
+const util = @import("../util.zig");
 const Allocator = std.mem.Allocator;
 const Dir = std.fs.Dir;
 const FileWriter = std.fs.File.Writer;
@@ -27,7 +27,7 @@ pub fn generate(
     classes_internal_dir: Dir,
     godot_writer: FileWriter,
     api: Api,
-    build_config: common.BuildConfig,
+    build_config: util.BuildConfig,
 ) !void {
     var built_in_size_map = try initBuiltinSizeMap(
         allocator,
@@ -58,7 +58,7 @@ fn generateBuiltinClass(
     godot_writer: FileWriter,
     size: usize,
 ) !void {
-    var id_fmt: common.IdFormatter = undefined;
+    var id_fmt: util.IdFormatter = undefined;
     id_fmt.data = class.name;
     try godot_writer.print("pub const {p} = @import(\"classes/{s}.zig\");\n", .{
         id_fmt,
@@ -79,7 +79,7 @@ fn generateBuiltinClass(
     // setup internal class file writer
     const internal_file_name = try std.fmt.allocPrint(
         allocator,
-        "{s}_" ++ common.internal_name ++ ".zig",
+        "{s}_" ++ util.internal_name ++ ".zig",
         .{class.name},
     );
     defer allocator.free(internal_file_name);
@@ -94,7 +94,7 @@ fn generateBuiltinClass(
 
     // import internal into class file
     try writer.print(
-        "const internal = @import(\"" ++ common.internal_name ++ "/{s}\");\n",
+        "const internal = @import(\"" ++ util.internal_name ++ "/{s}\");\n",
         .{internal_file_name},
     );
 
@@ -102,13 +102,13 @@ fn generateBuiltinClass(
     try internal_file_writer.print("pub const size = {d};\n", .{size});
 
     // write opaque blob to class
-    try writer.writeAll(common.opaque_field_name ++ ": [internal.size]u8,\n");
+    try writer.writeAll(util.opaque_field_name ++ ": [internal.size]u8,\n");
 
     // method bindings
     if (class.methods) |methods| {
         try func_gen.writeConstructor(writer, internal_file_writer, class_name_id, class); // write constructors
 
-        try internal_file_writer.writeAll("var " ++ common.function_bindings_name ++ ": struct {\n");
+        try internal_file_writer.writeAll("var " ++ util.function_bindings_name ++ ": struct {\n");
         for (methods) |func| {
             id_fmt.data = func.name;
             const func_name_id = try std.fmt.allocPrint(allocator, "{c}", .{id_fmt});
@@ -211,7 +211,7 @@ fn generateBuiltinClassFloat(
 fn initBuiltinSizeMap(
     allocator: Allocator,
     class_size_configurations: []const Api.BuiltinClassSize,
-    build_config: common.BuildConfig,
+    build_config: util.BuildConfig,
 ) !std.StringHashMap(usize) {
     var class_size_map = std.StringHashMap(usize).init(allocator);
     errdefer class_size_map.deinit();

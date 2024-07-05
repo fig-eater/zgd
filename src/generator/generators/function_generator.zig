@@ -1,6 +1,6 @@
 const std = @import("std");
 const Api = @import("../Api.zig");
-const common = @import("../common.zig");
+const util = @import("../util.zig");
 const Dir = std.fs.Dir;
 
 pub fn writeFunction(writer: anytype, func: Api.Function) !void {
@@ -73,8 +73,8 @@ pub fn writeMethod(writer: anytype, method: Api.Method) !void {
 // TODO add support for default parameters (use structs with defaults)
 pub fn writeFunctionArgs(writer: anytype, args: []const Api.Function.Argument) !void {
     if (args.len == 0) return;
-    var name_formatter: common.IdFormatter = undefined;
-    var type_formatter: common.IdFormatter = undefined;
+    var name_formatter: util.IdFormatter = undefined;
+    var type_formatter: util.IdFormatter = undefined;
     name_formatter.data = args[0].name;
     type_formatter.data = args[0].type;
     try writer.print("{s}_: GD.{p}", .{ name_formatter, type_formatter });
@@ -87,7 +87,7 @@ pub fn writeFunctionArgs(writer: anytype, args: []const Api.Function.Argument) !
 
 pub fn writeCallArgs(writer: anytype, args: []const Api.Function.Argument) !void {
     if (args.len == 0) return;
-    var name_formatter: common.IdFormatter = undefined;
+    var name_formatter: util.IdFormatter = undefined;
     name_formatter.data = args[0].name;
     try writer.print("{s}_", .{name_formatter});
     for (args[1..]) |arg| {
@@ -98,8 +98,8 @@ pub fn writeCallArgs(writer: anytype, args: []const Api.Function.Argument) !void
 
 pub fn writeArgsDocs(writer: anytype, args: []const Api.Function.Argument) !void {
     if (args.len == 0) return;
-    var name_formatter: common.IdFormatter = undefined;
-    var type_formatter: common.IdFormatter = undefined;
+    var name_formatter: util.IdFormatter = undefined;
+    var type_formatter: util.IdFormatter = undefined;
     name_formatter.data = args[0].name;
     type_formatter.data = args[0].type;
     try writer.print("{s}:{p}", .{ name_formatter, type_formatter });
