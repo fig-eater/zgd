@@ -24,6 +24,8 @@ pub fn generate(
     defer godot_file.close();
     const godot_writer = godot_file.writer();
 
+    try godot_writer.writeAll("pub const interface = @import(\"gdextension_interface\");\n");
+
     try @import("generators/header.zig").generate(output_directory, api.header);
     try @import("generators/global_enums.zig").generate(output_directory, api.global_enums);
     try @import("generators/utility_functions.zig").generate(
@@ -40,26 +42,26 @@ pub fn generate(
     );
     try @import("generators/native_structures.zig").generate(godot_writer, api.native_structures);
 
-    try @import("generators/interface.zig").generate(output_directory);
+    // try @import("generators/interface.zig").generate(output_directory);
 
-    try generateVersionFile(allocator, output_directory);
+    // try generateVersionFile(allocator, output_directory);
 }
 
-pub fn generateVersionFile(allocator: Allocator, output_directory: Dir) !void {
-    const version_file = try output_directory.createFile("version", .{});
-    defer version_file.close();
-    const result = try std.process.Child.run(.{
-        .allocator = allocator,
-        .argv = &.{ "godot", "--version" },
-    });
-    defer {
-        allocator.free(result.stdout);
-        allocator.free(result.stderr);
-    }
-    const writer = version_file.writer();
-    var seq = std.mem.splitSequence(u8, result.stdout, "\n");
-    try writer.print("{s}\n{s}\n", .{
-        seq.first(),
-        zig_version_string,
-    });
-}
+// pub fn generateVersionFile(allocator: Allocator, output_directory: Dir) !void {
+//     const version_file = try output_directory.createFile("version", .{});
+//     defer version_file.close();
+//     const result = try std.process.Child.run(.{
+//         .allocator = allocator,
+//         .argv = &.{ "godot", "--version" },
+//     });
+//     defer {
+//         allocator.free(result.stdout);
+//         allocator.free(result.stderr);
+//     }
+//     const writer = version_file.writer();
+//     var seq = std.mem.splitSequence(u8, result.stdout, "\n");
+//     try writer.print("{s}\n{s}\n", .{
+//         seq.first(),
+//         zig_version_string,
+//     });
+// }

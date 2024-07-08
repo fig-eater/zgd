@@ -13,13 +13,13 @@ GDExtension bindings generator for the Zig programming language.
 
 To install or update this package, within your project directory run:
 
-`zig fetch --save https://github.com/fig-eater/zigodot/archive/refs/heads/main.tar.gz`
+`zig fetch --save https://github.com/fig-eater/zgd/archive/refs/heads/main.tar.gz`
 
 Then in your build file add an import to "godot" onto the module that needs it.
 Here is an example of how you might do this:
 
 ```zig
-const zgd_dependency = b.dependency("zigodot", .{
+const zgd_dependency = b.dependency("zgd", .{
     .target = target,
     .optimize = optimize,
 });
@@ -27,7 +27,7 @@ const zgd_dependency = b.dependency("zigodot", .{
 // in a default project `compile_step` might be `lib` or `exe`.
 // replace the first "godot" here to avoid namespace conflicts or to
 // change the name of the import for your project.
-compile_step.root_module.addImport("godot", zgd_dependency.module("zigodot"));
+compile_step.root_module.addImport("godot", zgd_dependency.module("godot"));
 ```
 
 ## Usage
