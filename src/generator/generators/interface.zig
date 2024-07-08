@@ -3,37 +3,37 @@ const util = @import("../util.zig");
 
 const Dir = std.fs.Dir;
 
-pub fn generate(output_dir: Dir) !void {
-    const file = try output_dir.createFile("interface.zig", .{});
-    defer file.close();
-    const writer = file.writer();
-    try writeVariantEnum(writer);
-    try writeVariantOpEnum(writer);
-    try writeCallErrorTypeEnum(writer);
-    try writeCallErrorStruct(writer);
+// pub fn generate(output_dir: Dir) !void {
+//     const file = try output_dir.createFile("interface.zig", .{});
+//     defer file.close();
+//     const writer = file.writer();
+//     try writeVariantEnum(writer);
+//     try writeVariantOpEnum(writer);
+//     try writeCallErrorTypeEnum(writer);
+//     try writeCallErrorStruct(writer);
 
-    try writeInstanceBindingCallbacks(writer);
-}
+//     try writeInstanceBindingCallbacks(writer);
+// }
 
-fn writeVariantEnum(writer: anytype) !void {
-    const T = c_int;
-    const variant_enum_decls = getFieldsWithPrefix(T, "GDEXTENSION_VARIANT_TYPE_");
-    try writer.writeAll("pub const VariantType = enum(" ++ @typeName(T) ++ ") {\n");
-    for (variant_enum_decls) |kvp| {
-        try writer.print("    {s} = {d},\n", .{ kvp[0], kvp[1] });
-    }
-    try writer.writeAll("};\n");
-}
+// fn writeVariantEnum(writer: anytype) !void {
+//     const T = c_int;
+//     const variant_enum_decls = getFieldsWithPrefix(T, "GDEXTENSION_VARIANT_TYPE_");
+//     try writer.writeAll("pub const VariantType = enum(" ++ @typeName(T) ++ ") {\n");
+//     for (variant_enum_decls) |kvp| {
+//         try writer.print("    {s} = {d},\n", .{ kvp[0], kvp[1] });
+//     }
+//     try writer.writeAll("};\n");
+// }
 
-fn writeVariantOpEnum(writer: anytype) !void {
-    const T = c_int;
-    const variant_enum_decls = getFieldsWithPrefix(T, "GDEXTENSION_VARIANT_OP_");
-    try writer.writeAll("pub const VariantOperator = enum(" ++ @typeName(T) ++ ") {\n");
-    for (variant_enum_decls) |kvp| {
-        try writer.print("    {s} = {d},\n", .{ kvp[0], kvp[1] });
-    }
-    try writer.writeAll("};\n");
-}
+// fn writeVariantOpEnum(writer: anytype) !void {
+//     const T = c_int;
+//     const variant_enum_decls = getFieldsWithPrefix(T, "GDEXTENSION_VARIANT_OP_");
+//     try writer.writeAll("pub const VariantOperator = enum(" ++ @typeName(T) ++ ") {\n");
+//     for (variant_enum_decls) |kvp| {
+//         try writer.print("    {s} = {d},\n", .{ kvp[0], kvp[1] });
+//     }
+//     try writer.writeAll("};\n");
+// }
 
 // pub const GDExtensionVariantPtr = ?*anyopaque;
 // pub const GDExtensionConstVariantPtr = ?*const anyopaque;
@@ -57,15 +57,15 @@ fn writeVariantOpEnum(writer: anytype) !void {
 // pub const GDExtensionRefPtr = ?*anyopaque;
 // pub const GDExtensionConstRefPtr = ?*const anyopaque;
 
-fn writeCallErrorTypeEnum(writer: anytype) !void {
-    const T = c_int;
-    const variant_enum_decls = getFieldsWithPrefix(T, "GDEXTENSION_CALL_");
-    try writer.writeAll("pub const CallErrorType = enum(" ++ @typeName(T) ++ ") {\n");
-    for (variant_enum_decls) |kvp| {
-        try writer.print("    {s} = {d},\n", .{ kvp[0], kvp[1] });
-    }
-    try writer.writeAll("};\n");
-}
+// fn writeCallErrorTypeEnum(writer: anytype) !void {
+//     const T = c_int;
+//     const variant_enum_decls = getFieldsWithPrefix(T, "GDEXTENSION_CALL_");
+//     try writer.writeAll("pub const CallErrorType = enum(" ++ @typeName(T) ++ ") {\n");
+//     for (variant_enum_decls) |kvp| {
+//         try writer.print("    {s} = {d},\n", .{ kvp[0], kvp[1] });
+//     }
+//     try writer.writeAll("};\n");
+// }
 
 fn writeCallErrorStruct(writer: anytype) !void {
     try writer.writeAll(
