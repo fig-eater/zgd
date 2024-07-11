@@ -1,19 +1,60 @@
 const std = @import("std");
 const util = @import("../util.zig");
+const aro = @import("aro");
 
 const Dir = std.fs.Dir;
 
-// pub fn generate(output_dir: Dir) !void {
-//     const file = try output_dir.createFile("interface.zig", .{});
-//     defer file.close();
-//     const writer = file.writer();
-//     try writeVariantEnum(writer);
-//     try writeVariantOpEnum(writer);
-//     try writeCallErrorTypeEnum(writer);
-//     try writeCallErrorStruct(writer);
+pub fn generate(allocator: std.mem.Allocator, output_dir: Dir) !void {
+    const file = try output_dir.createFile("interface.zig", .{});
+    defer file.close();
+    const writer = file.writer();
 
-//     try writeInstanceBindingCallbacks(writer);
-// }
+    var comp = aro.Compilation.init(allocator);
+    defer comp.deinit();
+
+    { // set langopts
+        try comp.addDefaultPragmaHandlers();
+        comp.langopts.setEmulatedCompiler(aro.target_util.systemCompiler(comp.target));
+        comp.langopts.preserve_comments = true;
+        // comp.enu
+    }
+    try comp.addSystemIncludeDir("/home/frog/programs/zig/lib/include");
+    const source = try comp.addSourceFromPath("/home/frog/dev/zgd/gdextension_interface.h");
+
+    const builtin_macros = try comp.generateBuiltinMacros(.include_system_defines);
+    var preprocessor = try aro.Preprocessor.initDefault(&comp);
+    defer preprocessor.deinit();
+    preprocessor.verbose = true;
+
+    try preprocessor.preprocessSources(&.{ source, builtin_macros });
+    var tree = try preprocessor.parse();
+    defer tree.deinit();
+    try tree.dump(.no_color, writer);
+
+    // var preprocessor = try aro.Preprocessor.initDefault(&comp);
+    // defer preprocessor.deinit();
+    // const toks = try preprocessor.preprocess(source);
+    // defer aro.Tree.TokenWithExpansionLocs.free(toks.expansion_locs, allocator);
+
+    {
+
+        // const tree = try preprocessor.parse();
+        // try tree.dump(.no_color, file.writer());
+
+        // const parsed_tree = try preprocessor.parse();
+        // _ = parsed_tree;
+
+        // const writer = file.writer();
+        // try writeVariantEnum(writer);
+        // try writeVariantOpEnum(writer);
+        // try writeCallErrorTypeEnum(writer);
+        // try writeCallErrorStruct(writer);
+
+        // try writeInstanceBindingCallbacks(writer);
+
+        // try writeUtilityFns(writer);
+    }
+}
 
 // fn writeVariantEnum(writer: anytype) !void {
 //     const T = c_int;
@@ -104,6 +145,8 @@ fn writeFnPtrDefinition(comptime writer: anytype, comptime func_ptr: type) !void
 //     }
 //     try writer.writeAll("};\n");
 // }
+
+fn writeUtilityFns() !void {}
 
 fn getAllGdextensionDeclares() InterfaceDeclares {
     const decls = comptime blk: {

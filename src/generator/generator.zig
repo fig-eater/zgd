@@ -42,7 +42,7 @@ pub fn generate(
     );
     try @import("generators/native_structures.zig").generate(godot_writer, api.native_structures);
 
-    // try @import("generators/interface.zig").generate(output_directory);
+    try @import("generators/interface.zig").generate(allocator, output_directory);
 
     // try generateVersionFile(allocator, output_directory);
 }

@@ -14,11 +14,18 @@ pub fn step(
     bindings_directory: Build.LazyPath,
     target: Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    aro_module: *Build.Module,
     gdextension_interface_module: *Build.Module,
 ) *Step {
     const generate_bindings_step = b.step("bindings", "generate godot bindings");
 
-    const generator = makeGeneratorExe(b, target, optimize, gdextension_interface_module);
+    const generator = makeGeneratorExe(
+        b,
+        target,
+        optimize,
+        aro_module,
+        gdextension_interface_module,
+    );
 
     _ = force_regen;
 
@@ -41,6 +48,7 @@ fn makeGeneratorExe(
     b: *Build,
     target: Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    aro_module: *Build.Module,
     gdextension_interface_module: *Build.Module,
 ) *Step.Compile {
     const generator_exe = b.addExecutable(.{
@@ -49,6 +57,7 @@ fn makeGeneratorExe(
         .target = target,
         .optimize = optimize,
     });
+    generator_exe.root_module.addImport("aro", aro_module);
     generator_exe.root_module.addImport("gdextension_interface", gdextension_interface_module);
 
     const common_module = b.createModule(.{ .root_source_file = b.path("common.zig") });

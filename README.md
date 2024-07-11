@@ -15,8 +15,12 @@ To install or update this package, within your project directory run:
 
 `zig fetch --save https://github.com/fig-eater/zgd/archive/refs/heads/main.tar.gz`
 
+Set the `ZIG_LIB_DIR` environment variable to be the path to the
+lib directory of your zig installation.
+
 Then in your build file add an import to "godot" onto the module that needs it.
 Here is an example of how you might do this:
+
 
 ```zig
 const zgd_dependency = b.dependency("zgd", .{

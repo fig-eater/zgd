@@ -27,6 +27,27 @@ pub fn build(b: *Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const aro_path_option = b.option(
+        []const u8,
+        "aro-path",
+        "Path to arocc root src file. " ++
+            "Optional, attempts to find arocc from ZIG_LIB_DIR if not provided",
+    );
+
+    const aro_root_path = if (aro_path_option) |p| p else blk: {
+        // TODO: get these panics(or errors) to only run when actually trying to build something.
+        //       they currently get triggered if `zig build --help` is ran
+
+        const panic_str = "Failed to get ZIG_LIB_DIR environment variable " ++
+            "needed for finding the arocc path. " ++
+            "Please define it or provide the -Daro-path option when running zig build";
+        const lib_dir = std.zig.EnvVar.get(.ZIG_LIB_DIR, b.allocator) catch
+            @panic(panic_str) orelse
+            @panic(panic_str);
+
+        break :blk b.pathJoin(&.{ lib_dir, "compiler", "aro", "aro.zig" });
+    };
+
     const zgd_godot = b.option(
         []const u8,
         "zgd-godot",
@@ -58,6 +79,7 @@ pub fn build(b: *Build) !void {
         else => @panic("Target is not supported, must have bit width of 32 or 64"),
     };
 
+    const aro_module = localAroModule(b, Build.LazyPath{ .cwd_relative = aro_root_path });
     const dump_api_result = steps.dump_api.step(b, target, zgd_godot_path);
     const generate_bindings_step = steps.generate_bindings.step(
         b,
@@ -68,6 +90,7 @@ pub fn build(b: *Build) !void {
         b.path(bindings_dir),
         target,
         optimize,
+        aro_module,
         dump_api_result.gdextension_interface_module,
     );
     _ = addModule(
@@ -78,6 +101,12 @@ pub fn build(b: *Build) !void {
         optimize,
     );
     b.default_step = generate_bindings_step;
+}
+
+fn localAroModule(b: *Build, aro_root: Build.LazyPath) *Build.Module {
+    return b.createModule(.{
+        .root_source_file = aro_root,
+    });
 }
 
 pub fn addModule(
