@@ -1,14 +1,21 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const util = @import("build/util.zig");
 const steps = struct {
-    const dump_api = @import("build-steps/dump_api.zig");
-    const generate_bindings = @import("build-steps/generate_bindings.zig");
+    const build_generator = @import("build/steps/build_generator_step.zig");
+    const dump_api = @import("build/steps/dump_api_step.zig");
+    const generate_bindings = @import("build/steps/generate_bindings_step.zig");
+    const @"test" = @import("build/steps/test_step.zig");
 };
-
+const modules = struct {
+    const zgd = @import("build/modules/zgd_module.zig");
+};
+const local_modules = struct {
+    const common = @import("build/local-modules/common_module.zig");
+    const aro = @import("build/local-modules/aro_module.zig");
+};
 const Build = std.Build;
 const Step = Build.Step;
-const ResolvedTarget = Build.ResolvedTarget;
-const OptimizeMode = std.builtin.OptimizeMode;
 
 const BuildConfig = @import("common.zig").BuildConfig;
 
@@ -20,6 +27,7 @@ const bindings_dir = "src/bindings/";
 
 const zgd_module_root = bindings_dir ++ "godot.zig";
 const generator_root = "src/generator/root.zig";
+const test_root = "src/generator/test.zig";
 
 pub fn build(b: *Build) !void {
 
@@ -27,25 +35,13 @@ pub fn build(b: *Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const aro_path_option = b.option(
-        []const u8,
-        "aro-path",
-        "Path to arocc root src file. " ++
-            "Optional, attempts to find arocc from ZIG_LIB_DIR if not provided",
-    );
-
-    const aro_root_path = if (aro_path_option) |p| p else blk: {
-        // TODO: get these panics(or errors) to only run when actually trying to build something.
+    const zig_lib_dir = try util.getZigLibDir(b) orelse {
+        // TODO: get these errors to only run when actually trying to build something.
         //       they currently get triggered if `zig build --help` is ran
-
-        const panic_str = "Failed to get ZIG_LIB_DIR environment variable " ++
+        std.log.err("Failed to get ZIG_LIB_DIR environment variable " ++
             "needed for finding the arocc path. " ++
-            "Please define it or provide the -Daro-path option when running zig build";
-        const lib_dir = std.zig.EnvVar.get(.ZIG_LIB_DIR, b.allocator) catch
-            @panic(panic_str) orelse
-            @panic(panic_str);
-
-        break :blk b.pathJoin(&.{ lib_dir, "compiler", "aro", "aro.zig" });
+            "Please define it or provide the --zig-lib-dir option when running zig build", .{});
+        std.process.exit(1);
     };
 
     const zgd_godot = b.option(
@@ -53,9 +49,8 @@ pub fn build(b: *Build) !void {
         "zgd-godot",
         "Path to godot to use for binding generation. Default uses godot in path",
     );
-    const zgd_godot_path: ?Build.LazyPath = if (zgd_godot) |p| b.path(p) else null;
 
-    const zgd_force = b.option(
+    const force_bindings_regen = b.option(
         bool,
         "zgd-force",
         "Force regeneration of godot bindings. Default: false",
@@ -76,69 +71,52 @@ pub fn build(b: *Build) !void {
             .single => .float_64,
             .double => .double_64,
         },
-        else => @panic("Target is not supported, must have bit width of 32 or 64"),
+        else => {
+            std.log.err("Target is not supported, target must have bit width of 32 or 64", .{});
+            std.process.exit(1);
+        },
     };
 
-    const aro_module = localAroModule(b, Build.LazyPath{ .cwd_relative = aro_root_path });
-    const dump_api_result = steps.dump_api.step(b, target, zgd_godot_path);
-    const generate_bindings_step = steps.generate_bindings.step(
-        b,
-        dump_api_result.step,
-        dump_api_result.api_file,
-        build_config,
-        zgd_force,
-        b.path(bindings_dir),
-        target,
-        optimize,
-        aro_module,
-        dump_api_result.gdextension_interface_module,
-    );
-    _ = addModule(
-        b,
-        generate_bindings_step,
-        dump_api_result.gdextension_interface_module,
-        target,
-        optimize,
-    );
-    b.default_step = generate_bindings_step;
-}
+    const godot_runner = util.GodotRunner{
+        .build = b,
+        .godot_path = if (zgd_godot) |p| b.path(p) else null,
+    };
 
-fn localAroModule(b: *Build, aro_root: Build.LazyPath) *Build.Module {
-    return b.createModule(.{
-        .root_source_file = aro_root,
+    const aro_path_root = Build.LazyPath.path(zig_lib_dir, b, b.dupePath("compiler/aro/aro.zig"));
+
+    const common_module = local_modules.common.addToBuild(b);
+    const aro_module = local_modules.aro.addToBuild(b, aro_path_root);
+
+    const generator_exe = steps.build_generator.addToBuild(b, .{
+        .aro_module = aro_module,
+        .common_module = common_module,
+        .optimize = optimize,
+        .target = target,
     });
-}
 
-pub fn addModule(
-    b: *Build,
-    build_bindings_step: *Step,
-    interface_module: *Build.Module,
-    target: ResolvedTarget,
-    optimize: OptimizeMode,
-) *Build.Module {
-    // define root file of zgd generated by bindings step
-    // this being a generated file will make it so when the `godot` module is requested
-    // it will run the bindings_step to generate the root file
-    const generated_file = b.allocator.create(Build.GeneratedFile) catch @panic("OOM");
-    generated_file.* = .{
-        .step = build_bindings_step,
-        .path = b.dupePath(zgd_module_root),
-    };
+    const dumped_api = steps.dump_api.addToBuild(b, target, godot_runner);
+    const generate_bindings_step = steps.generate_bindings.addToBuild(b, .{
+        .api_file = dumped_api.api_file,
+        .bindings_directory = b.path(bindings_dir),
+        .build_config = build_config,
+        .dump_api_step = dumped_api.step,
+        .force_regen = force_bindings_regen,
+        .generator_exe = generator_exe,
+    });
+    _ = steps.@"test".addToBuild(b, .{
+        .optimize = optimize,
+        .target = target,
+        .test_root = b.path(test_root),
+    });
 
-    const overloading_dependency = b.dependency("overloading", .{
+    _ = modules.zgd.addToBuild(b, .{
+        .zgd_module_root = zgd_module_root,
+        .generate_bindings_step = generate_bindings_step,
         .target = target,
         .optimize = optimize,
     });
 
-    const module = b.addModule("godot", .{
-        .root_source_file = .{ .generated = .{ .file = generated_file } },
-        .imports = &.{
-            .{ .name = "overloading", .module = overloading_dependency.module("overloading") },
-            .{ .name = "gdextension_interface", .module = interface_module },
-        },
-    });
-
-    return module;
+    b.default_step = generate_bindings_step;
 }
 
 // pub fn areBindingsUpToDate(b: *Build, godot_path: []const u8) bool {
@@ -172,16 +150,3 @@ pub fn addModule(
 //     return (std.mem.eql(u8, godot_version_cached, seq.first()) and
 //         std.mem.eql(u8, zig_version_cached, builtin.zig_version_string));
 // }
-
-pub fn runGodot(b: *Build, godot_path: ?Build.LazyPath, args: ?[]const []const u8) *Step.Run {
-    const run_godot = Step.Run.create(b, "run godot");
-    if (godot_path) |p| {
-        run_godot.addFileArg(p);
-    } else {
-        run_godot.addArg("godot");
-    }
-    if (args) |a| {
-        run_godot.addArgs(a);
-    }
-    return run_godot;
-}

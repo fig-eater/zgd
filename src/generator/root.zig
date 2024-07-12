@@ -31,7 +31,7 @@ pub fn main() !void {
     if (args.len != expected_arg_count) {
         std.debug.print(
             "Error: Incorrect arg count got {d} expected {d}\n",
-            .{ args.len, expected_arg_count },
+            .{ args.len - 1, expected_arg_count - 1 },
         );
         printUsage(getArg(args, .exe));
         std.process.exit(1);
