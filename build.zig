@@ -2,12 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const GodotRunner = @import("build/GodotRunner.zig");
 const Options = @import("build/Options.zig");
-const steps = struct {
-    const build_generator = @import("build/steps/build_generator_step.zig");
-    const dump_api = @import("build/steps/dump_api_step.zig");
-    const generate_bindings = @import("build/steps/generate_bindings_step.zig");
-    const @"test" = @import("build/steps/test_step.zig");
-};
+const steps = @import("build/steps.zig");
 const local_modules = struct {
     const common = @import("build/local-modules/common_module.zig");
     const aro = @import("build/local-modules/aro_module.zig");

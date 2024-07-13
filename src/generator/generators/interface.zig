@@ -4,10 +4,15 @@ const aro = @import("aro");
 
 const Dir = std.fs.Dir;
 
-pub fn generate(allocator: std.mem.Allocator, output_dir: Dir) !void {
+pub fn generate(
+    allocator: std.mem.Allocator,
+    interface_path: []const u8,
+    include_dir_path: []const u8,
+    output_dir: Dir,
+) !void {
     const file = try output_dir.createFile("interface.zig", .{});
     defer file.close();
-    const writer = file.writer();
+    // const writer = file.writer();
 
     var comp = aro.Compilation.init(allocator);
     defer comp.deinit();
@@ -18,18 +23,18 @@ pub fn generate(allocator: std.mem.Allocator, output_dir: Dir) !void {
         comp.langopts.preserve_comments = true;
         // comp.enu
     }
-    try comp.addSystemIncludeDir("/home/frog/programs/zig/lib/include");
-    const source = try comp.addSourceFromPath("/home/frog/dev/zgd/gdextension_interface.h");
+    try comp.addSystemIncludeDir(include_dir_path);
+    const source = try comp.addSourceFromPath(interface_path);
 
     const builtin_macros = try comp.generateBuiltinMacros(.include_system_defines);
     var preprocessor = try aro.Preprocessor.initDefault(&comp);
     defer preprocessor.deinit();
-    preprocessor.verbose = true;
+    // preprocessor.verbose = true;
 
     try preprocessor.preprocessSources(&.{ source, builtin_macros });
     var tree = try preprocessor.parse();
     defer tree.deinit();
-    try tree.dump(.no_color, writer);
+    // try tree.dump(.no_color, writer);
 
     // var preprocessor = try aro.Preprocessor.initDefault(&comp);
     // defer preprocessor.deinit();

@@ -16,6 +16,8 @@ const type_map = std.StaticStringMap([]const u8).initComptime(.{
 pub fn generate(
     allocator: Allocator,
     api: Api,
+    interface_path: []const u8,
+    include_dir_path: []const u8,
     build_config: util.BuildConfig,
     output_directory: Dir,
 ) !void {
@@ -42,7 +44,12 @@ pub fn generate(
     );
     try @import("generators/native_structures.zig").generate(godot_writer, api.native_structures);
 
-    try @import("generators/interface.zig").generate(allocator, output_directory);
+    try @import("generators/interface.zig").generate(
+        allocator,
+        interface_path,
+        include_dir_path,
+        output_directory,
+    );
 
     // try generateVersionFile(allocator, output_directory);
 }

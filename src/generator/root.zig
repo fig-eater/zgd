@@ -2,8 +2,6 @@ const std = @import("std");
 const generator = @import("generator.zig");
 const util = @import("util.zig");
 const Api = @import("Api.zig");
-
-const heap = std.heap;
 const Allocator = std.mem.Allocator;
 const AnyReader = std.io.AnyReader;
 
@@ -13,12 +11,14 @@ const ArgIndices = enum {
     exe,
     build_config,
     api_path,
+    interface_path,
+    include_path,
     output_path,
 };
 const expected_arg_count = std.meta.fields(ArgIndices).len;
 
 pub fn main() !void {
-    var gpa = heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
         if (gpa.deinit() == .leak) {
             std.debug.print("Memory leaked\n", .{});
@@ -52,6 +52,8 @@ pub fn main() !void {
     try generator.generate(
         allocator,
         parsed_api.json.value,
+        getArg(args, .interface_path),
+        getArg(args, .include_path),
         build_config,
         output_dir,
     );
@@ -59,7 +61,7 @@ pub fn main() !void {
 
 pub fn printUsage(arg0: []const u8) void {
     std.debug.print(
-        "usage: {s} [" ++ buildConfigUsageString() ++ "] API_PATH OUTPUT_PATH\n",
+        "usage: {s} [" ++ buildConfigUsageString() ++ "] API_PATH INTERFACE_PATH INCLUDE_PATH OUTPUT_PATH\n",
         .{arg0},
     );
 }

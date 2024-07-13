@@ -18,7 +18,7 @@ const Args = struct {
 
     // options
     force_regen: bool,
-    bindings_directory: Build.LazyPath, // TODO remove
+    bindings_directory: Build.LazyPath, // TODO rename to output dir / remove
 };
 
 pub fn addToBuild(b: *Build, args: Args) *Step {
@@ -45,6 +45,8 @@ pub fn addToBuild(b: *Build, args: Args) *Step {
     if (build_config) |bc|
         build_bindings_cmd.addArg(@tagName(bc));
     build_bindings_cmd.addFileArg(args.api_file);
+    build_bindings_cmd.addFileArg(args.interface_file);
+    build_bindings_cmd.addFileArg(args.include_path);
     build_bindings_cmd.addFileArg(args.bindings_directory);
     build_bindings_cmd.step.dependOn(&check_build_config.step);
 

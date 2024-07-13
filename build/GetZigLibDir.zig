@@ -18,12 +18,8 @@ pub fn init(b: *Build) *GetZigLibDir {
             .owner = b,
             .makeFn = &makeFn,
         }),
-        .zig_lib_dir = .{ .step = undefined },
+        .zig_lib_dir = .{ .step = &get_zig_dir.step },
     };
-
-    get_zig_dir.zig_lib_dir.step = &get_zig_dir.step;
-    std.debug.print("init: {*} {*} {*}\n", .{ get_zig_dir, &get_zig_dir.step, get_zig_dir.zig_lib_dir.step });
-
     return get_zig_dir;
 }
 

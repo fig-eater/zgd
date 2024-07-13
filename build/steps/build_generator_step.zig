@@ -26,8 +26,6 @@ pub fn addToBuild(b: *Build, args: Args) *Step.Compile {
     });
 
     generator_exe.root_module.addImport("aro", args.aro_module);
-    std.debug.print("generator add to build: {*}\n", .{args.aro_module.root_source_file.?.generated.file.step});
-    // std.debug.assert(@intFromPtr(args.aro_module.root_source_file.?.generated.file.step) != 0);
     generator_exe.root_module.addImport("common", args.common_module);
 
     const install_generator = b.addInstallArtifact(generator_exe, .{});
