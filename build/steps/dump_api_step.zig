@@ -1,41 +1,44 @@
 const std = @import("std");
-const util = @import("../util.zig");
+const GodotRunner = @import("../GodotRunner.zig");
 const Build = std.Build;
 const Step = Build.Step;
 
-pub const DumpedApi = struct {
-    step: *Step,
+pub const DumpApi = struct {
+    step: Step,
     api_file: Build.LazyPath,
     interface_file: Build.LazyPath,
+    pub fn init(b: *Build, godot_runner: GodotRunner) *DumpApi {
+        const dump_api = b.allocator.create(DumpApi) catch @panic("OOM");
+        dump_api.step = Step.init(.{
+            .name = "dump api",
+            .id = .custom,
+            .owner = b,
+        });
+
+        { // dump extension_api
+            var run_godot = godot_runner.run(&.{ "--headless", "--dump-extension-api" });
+            dump_api.api_file = run_godot.addOutputFileArg("extension_api.json");
+            run_godot.cwd = dump_api.api_file.dirname();
+            dump_api.api_file.addStepDependencies(&dump_api.step);
+        }
+
+        {
+            var run_godot = godot_runner.run(&.{ "--headless", "--dump-gdextension-interface" });
+            dump_api.interface_file = run_godot.addOutputFileArg("gdextension_interface.h");
+            run_godot.cwd = dump_api.interface_file.dirname();
+            dump_api.interface_file.addStepDependencies(&dump_api.step);
+        }
+
+        return dump_api;
+    }
 };
 
 pub fn addToBuild(
     b: *Build,
-    godot_runner: util.GodotRunner,
-) DumpedApi {
+    godot_runner: GodotRunner,
+) *DumpApi {
     const dump_api_step = b.step("dump-api", "Dump GDExtension api");
-
-    var dumped_api: DumpedApi = undefined;
-    dumped_api.step = dump_api_step;
-
-    const api_file = blk: { // dump extension_api
-        var dump_api = godot_runner.run(&.{ "--headless", "--dump-extension-api" });
-        const extension_api_file = dump_api.addOutputFileArg("extension_api.json");
-        dump_api.cwd = extension_api_file.dirname();
-        dump_api_step.dependOn(&dump_api.step);
-        break :blk extension_api_file;
-    };
-
-    var dump_interface = godot_runner.run(&.{
-        "--headless",
-        "--dump-gdextension-interface",
-    });
-    const interface_file = dump_interface.addOutputFileArg("gdextension_interface.h");
-    dump_interface.cwd = interface_file.dirname();
-
-    return .{
-        .step = dump_api_step,
-        .api_file = api_file,
-        .interface_file = interface_file,
-    };
+    const dump_api = DumpApi.init(b, godot_runner);
+    dump_api_step.dependOn(&dump_api.step);
+    return dump_api;
 }

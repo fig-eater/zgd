@@ -5,7 +5,7 @@ const Step = Build.Step;
 
 const generator_root = "src/generator/root.zig";
 
-const Options = struct {
+const Args = struct {
     aro_module: *Build.Module,
     common_module: *Build.Module,
 
@@ -13,7 +13,7 @@ const Options = struct {
     optimize: std.builtin.OptimizeMode,
 };
 
-pub fn addToBuild(b: *Build, options: Options) *Step.Compile {
+pub fn addToBuild(b: *Build, args: Args) *Step.Compile {
     const generator_step = b.step(
         "generator",
         "Build and install generator artifact to prefix path",
@@ -21,12 +21,14 @@ pub fn addToBuild(b: *Build, options: Options) *Step.Compile {
     const generator_exe = b.addExecutable(.{
         .name = "zgd_generator",
         .root_source_file = b.path(generator_root),
-        .target = options.target,
-        .optimize = options.optimize,
+        .target = args.target,
+        .optimize = args.optimize,
     });
 
-    generator_exe.root_module.addImport("aro", options.aro_module);
-    generator_exe.root_module.addImport("common", options.common_module);
+    generator_exe.root_module.addImport("aro", args.aro_module);
+    std.debug.print("generator add to build: {*}\n", .{args.aro_module.root_source_file.?.generated.file.step});
+    // std.debug.assert(@intFromPtr(args.aro_module.root_source_file.?.generated.file.step) != 0);
+    generator_exe.root_module.addImport("common", args.common_module);
 
     const install_generator = b.addInstallArtifact(generator_exe, .{});
     generator_step.dependOn(&install_generator.step);
