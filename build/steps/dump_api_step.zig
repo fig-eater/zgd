@@ -36,9 +36,22 @@ pub const DumpApi = struct {
 pub fn addToBuild(
     b: *Build,
     godot_runner: GodotRunner,
+    dump_path: ?[]const u8,
 ) *DumpApi {
     const dump_api_step = b.step("dump-api", "Dump GDExtension api");
     const dump_api = DumpApi.init(b, godot_runner);
     dump_api_step.dependOn(&dump_api.step);
+    if (dump_path) |path| {
+        dump_api_step.dependOn(&b.addInstallFileWithDir(
+            dump_api.api_file,
+            .{ .custom = path },
+            "extension_api.json",
+        ).step);
+        dump_api_step.dependOn(&b.addInstallFileWithDir(
+            dump_api.interface_file,
+            .{ .custom = path },
+            "gdextension_interface.h",
+        ).step);
+    }
     return dump_api;
 }

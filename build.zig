@@ -49,7 +49,7 @@ pub fn build(b: *Build) !void {
         .target = target,
     });
 
-    const dump_api = steps.dump_api.addToBuild(b, godot_runner);
+    const dump_api = steps.dump_api.addToBuild(b, godot_runner, opts.dump_path);
     const generate_bindings_step = steps.generate_bindings.addToBuild(b, .{
         .generator_exe = generator_exe,
 
