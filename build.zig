@@ -25,6 +25,9 @@ pub fn build(b: *Build) !void {
     // package options
     const opts = Options.init(b);
 
+    const dep = b.dependency("aro", .{});
+    dep.
+
     // paths
     const zig_lib_dir = @import("build/GetZigLibDir.zig").init(b).getPath();
     const aro_path = Build.LazyPath.path(zig_lib_dir, b, b.pathJoin(&.{ "compiler", "aro", "aro.zig" }));
@@ -36,10 +39,10 @@ pub fn build(b: *Build) !void {
         // TODO allow for lazy path to built godot exe
         .godot_path = if (opts.godot_path) |p| b.path(p) else null,
     };
-    const aro_module = local_modules.aro.addToBuild(b, aro_path);
 
     // local modules
     const common_module = local_modules.common.addToBuild(b);
+    const aro_module = local_modules.aro.addToBuild(b, aro_path);
 
     // steps
     const generator_exe = steps.build_generator.addToBuild(b, .{

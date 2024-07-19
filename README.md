@@ -1,7 +1,7 @@
 > [!CAUTION]
 > WORK IN PROGRESS NOT READY FOR USE.
 
-# ZGD Zig Godot Bindings
+# ZGD - Zig Language Bindings for GDExtension
 
 GDExtension bindings generator for the Zig programming language.
 
