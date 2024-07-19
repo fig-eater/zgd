@@ -25,9 +25,6 @@ pub fn build(b: *Build) !void {
     // package options
     const opts = Options.init(b);
 
-    const dep = b.dependency("aro", .{});
-    dep.
-
     // paths
     const zig_lib_dir = @import("build/GetZigLibDir.zig").init(b).getPath();
     const aro_path = Build.LazyPath.path(zig_lib_dir, b, b.pathJoin(&.{ "compiler", "aro", "aro.zig" }));

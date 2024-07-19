@@ -46,6 +46,10 @@ configuration for bindings. This specifies float size for certain types
 (Vectors) and if building for 32-bit or 64-bit architecture. Leave empty to
 generate bindings using single precision floats with the local architecture.
 
+
+update aro with
+`git subtree add --squash --prefix=aro https://github.com/Vexu/arocc.git`
+
 ## Also See
 
 [godot-zig](https://github.com/godot-zig/godot-zig) - Another zig Godot bindings
@@ -53,3 +57,5 @@ project.
 
 [zig-function-overloading](https://github.com/fig-eater/zig-function-overloading) -
 Adds explicit function overloading to zig, used within this package.
+
+[aro](https://github.com/Vexu/arocc) - Aro C compiler. used within this project
