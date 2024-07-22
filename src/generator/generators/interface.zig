@@ -26,8 +26,8 @@ pub fn generate(
         comp.langopts.preserve_comments = true;
     }
     _ = include_dir_path;
-    // try comp.addSystemIncludeDir(include_dir_path);
-    try comp.addSystemIncludeDir("/home/frog/dev/zgd/src/generator/generators/interface/include");
+    // try comp.addSystemIncludeDir(include_dir_path);-
+    // try comp.addSystemIncludeDir("/home/frog/dev/zgd/aro/include");
     const source = try comp.addSourceFromPath(interface_path);
 
     // const builtin_macros = try comp.generateBuiltinMacros(.include_system_defines);

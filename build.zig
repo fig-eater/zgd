@@ -27,7 +27,6 @@ pub fn build(b: *Build) !void {
 
     // paths
     const zig_lib_dir = @import("build/GetZigLibDir.zig").init(b).getPath();
-    const aro_path = Build.LazyPath.path(zig_lib_dir, b, b.pathJoin(&.{ "compiler", "aro", "aro.zig" }));
     const include_path = Build.LazyPath.path(zig_lib_dir, b, "include");
 
     // helper
@@ -39,7 +38,7 @@ pub fn build(b: *Build) !void {
 
     // local modules
     const common_module = local_modules.common.addToBuild(b);
-    const aro_module = local_modules.aro.addToBuild(b, aro_path);
+    const aro_module = local_modules.aro.addToBuild(b, target, optimize);
 
     // steps
     const generator_exe = steps.build_generator.addToBuild(b, .{
