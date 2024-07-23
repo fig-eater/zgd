@@ -1,1 +1,0 @@
-int multiple = 10;
