@@ -7,7 +7,6 @@
             .url = "https://github.com/fig-eater/zig-function-overloading/archive/refs/heads/main.tar.gz",
             .hash = "12206eeb76062d0423ec4c2b8d13f275a90ddbd21981163ceae4def36d0245ca6644",
         },
-        .aro = .{ .path = "aro" },
     },
     .paths = .{
         "build.zig",
