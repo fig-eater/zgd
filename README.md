@@ -48,7 +48,7 @@ generate bindings using single precision floats with the local architecture.
 
 
 update aro with
-`git subtree add --squash --prefix=aro https://github.com/Vexu/arocc.git`
+`git subtree add --squash --prefix=aro https://github.com/Vexu/arocc.git COMMIT_HASH`
 
 ## Also See
 

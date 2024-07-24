@@ -25,10 +25,6 @@ pub fn build(b: *Build) !void {
     // package options
     const opts = Options.init(b);
 
-    // paths
-    const zig_lib_dir = @import("build/GetZigLibDir.zig").init(b).getPath();
-    const include_path = Build.LazyPath.path(zig_lib_dir, b, "include");
-
     // helper
     const godot_runner = GodotRunner{
         .build = b,
@@ -38,7 +34,7 @@ pub fn build(b: *Build) !void {
 
     // local modules
     const common_module = local_modules.common.addToBuild(b);
-    const aro_module = local_modules.aro.addToBuild(b, target, optimize);
+    const aro_module, const aro_include_path = local_modules.aro.addToBuild(b, target, optimize);
 
     // steps
     const generator_exe = steps.build_generator.addToBuild(b, .{
@@ -55,7 +51,7 @@ pub fn build(b: *Build) !void {
         // to be passed into generator
         .api_file = dump_api.api_file,
         .interface_file = dump_api.interface_file,
-        .include_path = include_path,
+        .include_path = aro_include_path,
         .precision = opts.precision,
         .target = target,
 

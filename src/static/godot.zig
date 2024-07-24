@@ -74,7 +74,7 @@ pub fn init(
     std.debug.assert(class_lib_ptr != null);
     std.debug.assert(godot_init_struct != null);
 
-    initInterface(getProcAddressFn);
+    // initInterface(getProcAddressFn);
     // internal.
 
     // godot_init_struct.*.initialize =
@@ -86,16 +86,16 @@ pub fn init(
     };
 }
 
-fn initInterface(
-    get_proc_addr_fn: gdi.GDExtensionInterfaceGetProcAddress,
-) void {
-    const getProcAddr = get_proc_addr_fn.?;
-    const interface_fn_struct: std.builtin.Type.Struct = @typeInfo(@TypeOf(interface_fns)).Struct;
-    std.debug.assert(interface_fn_struct.fields.len == interface_fn_names.len);
-    inline for (interface_fn_names, interface_fn_struct.fields) |fn_name, field| {
-        @field(interface_fns, field.name) = @ptrCast(getProcAddr(fn_name));
-    }
-}
+// fn initInterface(
+//     get_proc_addr_fn: gdi.GDExtensionInterfaceGetProcAddress,
+// ) void {
+//     const getProcAddr = get_proc_addr_fn.?;
+//     const interface_fn_struct: std.builtin.Type.Struct = @typeInfo(@TypeOf(interface_fns)).Struct;
+//     std.debug.assert(interface_fn_struct.fields.len == interface_fn_names.len);
+//     inline for (interface_fn_names, interface_fn_struct.fields) |fn_name, field| {
+//         @field(interface_fns, field.name) = @ptrCast(getProcAddr(fn_name));
+//     }
+// }
 
 /// Get an allocator which uses the Godot
 pub fn allocator() std.mem.Allocator {
