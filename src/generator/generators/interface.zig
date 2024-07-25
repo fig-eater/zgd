@@ -30,10 +30,10 @@ pub fn generate(
     var tree = try pp.parse();
     defer tree.deinit();
 
-    try translate(tree, writer);
+    try translate(tree, source.id, writer);
 }
 
-fn translate(tree: aro.Tree, writer: anytype) !void {
+fn translate(tree: aro.Tree, public_source: aro.Source.Id, writer: anytype) !void {
     var mapper = tree.comp.string_interner.getFastTypeMapper(tree.comp.gpa) catch
         tree.comp.string_interner.getSlowTypeMapper();
     defer mapper.deinit(tree.comp.gpa);
@@ -42,15 +42,16 @@ fn translate(tree: aro.Tree, writer: anytype) !void {
     defer anon_typedef_map.deinit();
 
     for (tree.root_decls) |i| {
-        try translateNode(tree, mapper, anon_typedef_map, i, writer);
+        try translateNode(i, tree, mapper, anon_typedef_map, public_source, writer);
     }
 }
 
 fn translateNode(
+    node: aro.Tree.NodeIndex,
     tree: aro.Tree,
     mapper: aro.TypeMapper,
     anon_typedef_map: std.StringHashMap([]const u8),
-    node: aro.Tree.NodeIndex,
+    public_source: aro.Source.Id,
     writer: anytype,
 ) !void {
     const tag: aro.Tree.Tag = tree.nodes.items(.tag)[@intFromEnum(node)];
@@ -70,29 +71,181 @@ fn translateNode(
                 },
                 else => {},
             }
+
+            const loc: aro.Source.Location = tree.tokens.items(.loc)[data.decl.name];
+            if (loc.id == public_source) {
+                try writer.writeAll("pub ");
+            }
+
             const name = tree.tokSlice(data.decl.name);
-            try writer.print("const {s} = void;\n", .{name});
+            try writer.print("const {s} = ", .{name});
+            try translateType(ty, tree, mapper, anon_typedef_map, writer);
+            try writer.writeAll(";\n");
+
             if (data.decl.node != .none) {
-                @panic("unhandled");
-                // try writer.print("######## unhandled sub typedef!: {s}\n", .{tree.tokSlice(data.decl.name)});
+                std.log.err("unhandled\n", .{});
             }
         },
         .enum_decl => {
             const enum_type_name = mapper.lookup(ty.data.@"enum".name);
             const enum_name = if (anon_typedef_map.get(enum_type_name)) |n| n else enum_type_name;
+
+            if (ty.data.@"enum".fields.len > 0 and
+                tree.tokens.items(.loc)[ty.data.@"enum".fields[0].name_tok].id == public_source)
+            {
+                try writer.writeAll("pub ");
+            }
+
             try writer.print("const {s} = enum {{\n", .{enum_name});
             for (tree.data[data.range.start..data.range.end]) |stmt| {
-                try translateNode(tree, mapper, anon_typedef_map, stmt, writer);
+                try translateChildNode(tree, mapper, anon_typedef_map, stmt, writer);
             }
             try writer.writeAll("};\n");
         },
+        .struct_decl => {
+            const mapped_name = mapper.lookup(ty.data.record.name);
+            const struct_name = if (anon_typedef_map.get(mapped_name)) |n| n else mapped_name;
+
+            if (ty.data.record.fields.len > 0 and
+                tree.tokens.items(.loc)[ty.data.record.fields[0].name_tok].id == public_source)
+            {
+                try writer.writeAll("pub ");
+            }
+            try writer.print("const {s} = struct {{\n", .{struct_name});
+            for (tree.data[data.range.start..data.range.end]) |stmt| {
+                try translateChildNode(tree, mapper, anon_typedef_map, stmt, writer);
+            }
+            try writer.writeAll("};\n");
+        },
+        .struct_decl_two => {},
+        else => {
+            @panic("unhandled");
+        },
+    }
+}
+
+fn translateChildNode(
+    tree: aro.Tree,
+    mapper: aro.TypeMapper,
+    anon_typedef_map: std.StringHashMap([]const u8),
+    node: aro.Tree.NodeIndex,
+    writer: anytype,
+) !void {
+    const tag: aro.Tree.Tag = tree.nodes.items(.tag)[@intFromEnum(node)];
+    const data: aro.Tree.Node.Data = tree.nodes.items(.data)[@intFromEnum(node)];
+    const ty: aro.Type = tree.nodes.items(.ty)[@intFromEnum(node)];
+
+    switch (tag) {
         .enum_field_decl => {
             try writer.print("    {s},\n", .{tree.tokSlice(data.decl.name)});
         },
-        .struct_decl => {},
-        .struct_decl_two => {},
+        .record_field_decl => {
+            try writer.print("    {s}: ", .{tree.tokSlice(data.decl.name)});
+            try translateType(ty, tree, mapper, anon_typedef_map, writer);
+            try writer.writeAll(",\n");
+        },
+        else => unreachable,
+    }
+}
+
+fn translateType(
+    ty: aro.Type,
+    tree: aro.Tree,
+    mapper: aro.TypeMapper,
+    anon_typedef_map: std.StringHashMap([]const u8),
+    writer: anytype,
+) !void {
+    switch (ty.specifier) {
+        .void, .bool => |specifier| try writer.writeAll(@tagName(specifier)),
+
+        // int
+        .char,
+        .uchar,
+        .schar,
+        .short,
+        .ushort,
+        .int,
+        .uint,
+        .long,
+        .ulong,
+        .long_long,
+        .ulong_long,
+        .int128,
+        .uint128,
+        .bit_int,
+        => {
+            const signed_char: u8 = if (ty.signedness(tree.comp) == .signed) 'i' else 'u';
+            try writer.print("{c}{d}", .{ signed_char, ty.bitSizeof(tree.comp).? });
+        },
+
+        // float
+        .fp16,
+        .float16,
+        .float,
+        .double,
+        .long_double,
+        .float128,
+        => try writer.print("f{d}", .{ty.bitSizeof(tree.comp).?}),
+
+        .pointer => {
+            const sub_type = ty.data.sub_type;
+            switch (sub_type.specifier) {
+                .void => {
+                    try writer.writeAll("*anyopaque");
+                },
+                else => {
+                    try writer.writeByte('*');
+                    try translateType(sub_type.*, tree, mapper, anon_typedef_map, writer);
+                },
+            }
+        },
+
+        .func => {
+            const func = ty.data.func;
+            try writer.writeAll("fn (");
+            for (func.params, 0..) |param, i| {
+                const param_name = mapper.lookup(param.name);
+                if (param_name.len != 0) {
+                    try writer.print("{s}: ", .{param_name});
+                }
+                try translateType(param.ty, tree, mapper, anon_typedef_map, writer);
+                if (i != func.params.len - 1) {
+                    try writer.writeAll(", ");
+                }
+            }
+            try writer.writeAll(") callconv(.C) ");
+            try translateType(func.return_type, tree, mapper, anon_typedef_map, writer);
+        },
+        .var_args_func => {
+            try writer.writeAll("####varargfn####");
+        },
+        .old_style_func => {
+            try writer.writeAll("####oldstylefn####");
+        },
+
+        // data.array
+        .array, .static_array, .incomplete_array, .vector => {
+            try writer.writeAll("####array####");
+        },
+
+        // data.record
+        .@"struct" => {
+            const mapped_name = mapper.lookup(ty.data.record.name);
+            const name = if (anon_typedef_map.get(mapped_name)) |n| n else mapped_name;
+            try writer.writeAll(name);
+        },
+        .@"union" => {
+            try writer.writeAll("####union####");
+        },
+
+        // data.enum
+        .@"enum" => {
+            const mapped_name = mapper.lookup(ty.data.@"enum".name);
+            const name = if (anon_typedef_map.get(mapped_name)) |n| n else mapped_name;
+            try writer.writeAll(name);
+        },
         else => {
-            try writer.print("######## unhandled tag!: {s}\n", .{@tagName(tag)});
+            @panic("unhandled");
         },
     }
 }
