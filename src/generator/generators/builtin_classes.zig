@@ -5,6 +5,10 @@ const util = @import("../util.zig");
 const Allocator = std.mem.Allocator;
 const Dir = std.fs.Dir;
 const FileWriter = std.fs.File.Writer;
+const fmt = struct {
+    usingnamespace std.fmt;
+    usingnamespace @import("../fmt.zig");
+};
 
 const BuiltinClassGenerator = *const fn (
     allocator: Allocator,
@@ -58,7 +62,7 @@ fn generateBuiltinClass(
     godot_writer: FileWriter,
     size: usize,
 ) !void {
-    var id_fmt: util.IdFormatter = undefined;
+    var id_fmt: fmt.IdFormatter = undefined;
     id_fmt.data = class.name;
     try godot_writer.print("pub const {p} = @import(\"classes/{s}.zig\");\n", .{
         id_fmt,
@@ -66,18 +70,18 @@ fn generateBuiltinClass(
     });
 
     id_fmt.data = class.name;
-    const class_name_id = try std.fmt.allocPrint(allocator, "{p}", .{id_fmt});
+    const class_name_id = try fmt.allocPrint(allocator, "{p}", .{id_fmt});
     defer allocator.free(class_name_id);
 
     // setup class file writer
-    const file_name = try std.fmt.allocPrint(allocator, "{s}.zig", .{class_name_id});
+    const file_name = try fmt.allocPrint(allocator, "{s}.zig", .{class_name_id});
     defer allocator.free(file_name);
     const file = try output_dir.createFile(file_name, .{});
     defer file.close();
     const writer = file.writer();
 
     // setup internal class file writer
-    const internal_file_name = try std.fmt.allocPrint(
+    const internal_file_name = try fmt.allocPrint(
         allocator,
         "{s}_" ++ util.internal_name ++ ".zig",
         .{class.name},
@@ -111,11 +115,11 @@ fn generateBuiltinClass(
         try internal_file_writer.writeAll("var " ++ util.function_bindings_name ++ ": struct {\n");
         for (methods) |func| {
             id_fmt.data = func.name;
-            const func_name_id = try std.fmt.allocPrint(allocator, "{c}", .{id_fmt});
+            const func_name_id = try fmt.allocPrint(allocator, "{c}", .{id_fmt});
             defer allocator.free(func_name_id);
 
             id_fmt.data = func.return_type;
-            const return_type_id = try std.fmt.allocPrint(allocator, "{p}", .{id_fmt});
+            const return_type_id = try fmt.allocPrint(allocator, "{p}", .{id_fmt});
             defer allocator.free(return_type_id);
 
             try internal_file_writer.print("    {s}: *fn (", .{func_name_id});

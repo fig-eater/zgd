@@ -3,7 +3,15 @@ const Api = @import("../Api.zig");
 const util = @import("../util.zig");
 const builtin_classes = @import("builtin_classes.zig");
 const func_gen = @import("function_generator.zig");
-const Dir = std.fs.Dir;
+const fs = struct {
+    usingnamespace std.fs;
+    usingnamespace @import("../fs.zig");
+};
+const fmt = struct {
+    usingnamespace std.fmt;
+    usingnamespace @import("../fmt.zig");
+};
+const Dir = fs.Dir;
 const Allocator = std.mem.Allocator;
 
 pub fn generate(
@@ -13,11 +21,11 @@ pub fn generate(
     api: Api,
     build_config: util.BuildConfig,
 ) !void {
-    try util.makeDirIfMissing(output_directory, "classes");
+    try fs.makeDirIfMissing(output_directory, "classes");
     var classes_dir = try output_directory.openDir("classes", .{});
     defer classes_dir.close();
 
-    try util.makeDirIfMissing(classes_dir, "internal");
+    try fs.makeDirIfMissing(classes_dir, "internal");
     var internal_dir = try classes_dir.openDir("internal", .{});
     defer internal_dir.close();
 
@@ -42,12 +50,12 @@ pub fn generateClass(
     internal_dir: Dir,
     class: Api.Class,
 ) !void {
-    var id_fmt: util.IdFormatter = undefined;
+    var id_fmt: fmt.IdFormatter = undefined;
     id_fmt.data = class.name;
-    const class_name_id = try std.fmt.allocPrint(allocator, "{p}", .{id_fmt});
+    const class_name_id = try fmt.allocPrint(allocator, "{p}", .{id_fmt});
     defer allocator.free(class_name_id);
 
-    const file_name = try std.fmt.allocPrint(allocator, "{s}.zig", .{class_name_id});
+    const file_name = try fmt.allocPrint(allocator, "{s}.zig", .{class_name_id});
     defer allocator.free(file_name);
 
     try godot_writer.print("pub const {s} = @import(\"classes/{s}\");\n", .{ class_name_id, file_name });
@@ -57,7 +65,7 @@ pub fn generateClass(
     const writer = file.writer();
 
     // setup internal class file writer
-    const internal_file_name = try std.fmt.allocPrint(
+    const internal_file_name = try fmt.allocPrint(
         allocator,
         "{s}_" ++ util.internal_name ++ ".zig",
         .{class.name},

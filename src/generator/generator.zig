@@ -1,6 +1,6 @@
 const std = @import("std");
 const Api = @import("Api.zig");
-const util = @import("util.zig");
+const BuildConfig = @import("util.zig").BuildConfig;
 const Allocator = std.mem.Allocator;
 const Dir = std.fs.Dir;
 const zig_version_string = @import("builtin").zig_version_string;
@@ -18,7 +18,7 @@ pub fn generate(
     api: Api,
     interface_path: []const u8,
     include_dir_path: []const u8,
-    build_config: util.BuildConfig,
+    build_config: BuildConfig,
     output_directory: Dir,
 ) !void {
     // create root module file

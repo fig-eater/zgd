@@ -1,8 +1,7 @@
 const std = @import("std");
-const util = @import("../util.zig");
-const aro = @import("aro");
-
 const Dir = std.fs.Dir;
+const aro = @import("aro");
+const fmt = @import("../fmt.zig");
 
 pub fn generate(
     allocator: std.mem.Allocator,
@@ -63,12 +62,44 @@ fn translateNode(
             switch (ty.specifier) {
                 .@"enum" => {
                     const name = mapper.lookup(ty.data.@"enum".name);
-                    if (std.mem.startsWith(u8, name, "(anonymous enum")) return;
+                    if (std.mem.startsWith(u8, name, "(")) {
+                        // this should be handled by the anon_typedef_map
+                        std.debug.assert(anon_typedef_map.get(name) != null);
+                        return;
+                    }
                 },
                 .@"struct" => {
                     const name = mapper.lookup(ty.data.record.name);
-                    if (std.mem.startsWith(u8, name, "(anonymous struct")) return;
+                    if (std.mem.startsWith(u8, name, "(")) {
+                        // this should be handled by the anon_typedef_map
+                        std.debug.assert(anon_typedef_map.get(name) != null);
+                        return;
+                    }
                 },
+                .char,
+                .uchar,
+                .schar,
+                .short,
+                .ushort,
+                .int,
+                .uint,
+                .long,
+                .ulong,
+                .long_long,
+                .ulong_long,
+                .int128,
+                .uint128,
+                .bit_int,
+                => {
+                    if (std.mem.eql(u8, data.decl.name, "size_t")) {}
+                },
+                .fp16,
+                .float16,
+                .float,
+                .double,
+                .long_double,
+                .float128,
+                => {},
                 else => {},
             }
 
@@ -76,9 +107,11 @@ fn translateNode(
             if (loc.id == public_source) {
                 try writer.writeAll("pub ");
             }
+            // TODO conditionally set formatting based on the right-hand side
+            try writer.print("const {p} = ", .{fmt.IdFormatter{
+                .data = tree.tokSlice(data.decl.name),
+            }});
 
-            const name = tree.tokSlice(data.decl.name);
-            try writer.print("const {s} = ", .{name});
             try translateType(ty, tree, mapper, anon_typedef_map, writer);
             try writer.writeAll(";\n");
 
@@ -96,7 +129,7 @@ fn translateNode(
                 try writer.writeAll("pub ");
             }
 
-            try writer.print("const {s} = enum {{\n", .{enum_name});
+            try writer.print("const {p} = enum {{\n", .{fmt.IdFormatter{ .data = enum_name }});
             for (tree.data[data.range.start..data.range.end]) |stmt| {
                 try translateChildNode(tree, mapper, anon_typedef_map, stmt, writer);
             }
@@ -111,7 +144,7 @@ fn translateNode(
             {
                 try writer.writeAll("pub ");
             }
-            try writer.print("const {s} = struct {{\n", .{struct_name});
+            try writer.print("const {p} = struct {{\n", .{fmt.IdFormatter{ .data = struct_name }});
             for (tree.data[data.range.start..data.range.end]) |stmt| {
                 try translateChildNode(tree, mapper, anon_typedef_map, stmt, writer);
             }
@@ -137,10 +170,10 @@ fn translateChildNode(
 
     switch (tag) {
         .enum_field_decl => {
-            try writer.print("    {s},\n", .{tree.tokSlice(data.decl.name)});
+            try writer.print("    {s},\n", .{fmt.IdFormatter{ .data = tree.tokSlice(data.decl.name) }});
         },
         .record_field_decl => {
-            try writer.print("    {s}: ", .{tree.tokSlice(data.decl.name)});
+            try writer.print("    {s}: ", .{fmt.IdFormatter{ .data = tree.tokSlice(data.decl.name) }});
             try translateType(ty, tree, mapper, anon_typedef_map, writer);
             try writer.writeAll(",\n");
         },

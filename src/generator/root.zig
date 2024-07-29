@@ -1,7 +1,11 @@
 const std = @import("std");
 const generator = @import("generator.zig");
-const util = @import("util.zig");
+const BuildConfig = @import("util.zig").BuildConfig;
 const Api = @import("Api.zig");
+const fs = struct {
+    usingnamespace std.fs;
+    usingnamespace @import("fs.zig");
+};
 const Allocator = std.mem.Allocator;
 const AnyReader = std.io.AnyReader;
 
@@ -42,10 +46,10 @@ pub fn main() !void {
     const build_config = getBuildConfig(args);
 
     const api_path = getArg(args, .api_path);
-    const api_file = if (std.fs.path.isAbsolute(api_path))
-        try std.fs.openFileAbsolute(api_path, .{})
+    const api_file = if (fs.path.isAbsolute(api_path))
+        try fs.openFileAbsolute(api_path, .{})
     else
-        try std.fs.cwd().openFile(api_path, .{});
+        try fs.cwd().openFile(api_path, .{});
     defer api_file.close();
     const parsed_api = try Api.parse(allocator, api_file.reader());
     defer parsed_api.deinit();
@@ -69,7 +73,7 @@ pub fn printUsage(arg0: []const u8) void {
 fn buildConfigUsageString() []const u8 {
     comptime {
         var config_string: []const u8 = &.{};
-        const configs = @typeInfo(util.BuildConfig).Enum.fields;
+        const configs = @typeInfo(BuildConfig).Enum.fields;
         for (configs) |config| {
             config_string = config_string ++ config.name ++ "|";
         }
@@ -77,23 +81,23 @@ fn buildConfigUsageString() []const u8 {
     }
 }
 
-fn getBuildConfig(args: [][:0]u8) util.BuildConfig {
+fn getBuildConfig(args: [][:0]u8) BuildConfig {
     std.debug.assert(args.len == expected_arg_count);
     const build_config_string = getArg(args, .build_config);
-    return std.meta.stringToEnum(util.BuildConfig, build_config_string) orelse {
+    return std.meta.stringToEnum(BuildConfig, build_config_string) orelse {
         printUsage(getArg(args, .exe));
         std.debug.print("Error: Invalid Build Configuration \"{s}\"\n", .{build_config_string});
         std.process.exit(@truncate(@intFromError(BuildConfigError.InvalidBuildConfigError)));
     };
 }
 
-fn getOutputDirectory(path: []const u8) !std.fs.Dir {
-    if (std.fs.path.isAbsolute(path)) {
-        try util.makeDirAbsoluteIfMissing(path);
-        return try std.fs.openDirAbsolute(path, .{});
+fn getOutputDirectory(path: []const u8) !fs.Dir {
+    if (fs.path.isAbsolute(path)) {
+        try fs.makeDirAbsoluteIfMissing(path);
+        return try fs.openDirAbsolute(path, .{});
     } else {
-        try util.makeDirIfMissing(std.fs.cwd(), path);
-        return try std.fs.cwd().openDir(path, .{});
+        try fs.makeDirIfMissing(fs.cwd(), path);
+        return try fs.cwd().openDir(path, .{});
     }
 }
 
