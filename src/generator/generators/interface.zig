@@ -67,13 +67,8 @@ fn translate(tree: aro.Tree, public_source: aro.Source.Id, writer: anytype) !voi
 
     try writer.writeAll("pub const bindings = struct {\n");
     for (interface_list.items) |node| {
-        const tag: aro.Tree.Tag = tree.nodes.items(.tag)[@intFromEnum(node)];
-        _ = tag; // autofix
         const data: aro.Tree.Node.Data = tree.nodes.items(.data)[@intFromEnum(node)];
         const ty: aro.Type = tree.nodes.items(.ty)[@intFromEnum(node)];
-        const subtype = ty.data.sub_type;
-        const func = subtype.data.func;
-        _ = func; // autofix
         const decl_name = noGdxPrefix(tree.tokSlice(data.decl.name))["Interface".len..];
         try writer.print("    var {s}: ", .{fmt.IdFormatter{ .data = decl_name }});
         try translateType(ty, tree, mapper, anon_typedef_map, writer);
@@ -94,6 +89,7 @@ fn translateRootNode(
     const tag: aro.Tree.Tag = tree.nodes.items(.tag)[@intFromEnum(node)];
     const data: aro.Tree.Node.Data = tree.nodes.items(.data)[@intFromEnum(node)];
     const ty: aro.Type = tree.nodes.items(.ty)[@intFromEnum(node)];
+
     switch (tag) {
         .typedef => {
             switch (ty.specifier) {
@@ -128,6 +124,7 @@ fn translateRootNode(
                 .uint128,
                 .bit_int,
                 => {
+
                     // const decl_name = tree.tokSlice(data.decl.name);
                     // std.debug.print("{s}\n", .{decl_name});
                     // if (std.mem.endsWith(u8, decl_name, "_t")) {
@@ -358,6 +355,17 @@ fn translateType(
     anon_typedef_map: std.StringHashMap([]const u8),
     writer: anytype,
 ) !void {
+    if (ty.typedef) |tok| {
+        const token = tree.tokSlice(tok);
+        if (std.mem.eql(u8, token, "GDExtensionBool")) {
+            try writer.writeAll("bool");
+            return;
+        }
+        if (!std.mem.endsWith(u8, token, "_t") and !std.mem.eql(u8, token, "GDExtensionInt")) {
+            try writer.writeAll(noGdxPrefix(token));
+            return;
+        }
+    }
     switch (ty.specifier) {
         .void, .bool => |specifier| try writer.writeAll(@tagName(specifier)),
 
@@ -395,6 +403,10 @@ fn translateType(
             switch (sub_type.specifier) {
                 .void => {
                     try writer.writeAll("?*anyopaque");
+                },
+                .func, .var_args_func, .old_style_func => {
+                    try writer.writeAll("*const ");
+                    try translateType(sub_type.*, tree, mapper, anon_typedef_map, writer);
                 },
                 else => {
                     try writer.writeAll("[*c]");
