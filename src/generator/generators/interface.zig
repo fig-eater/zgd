@@ -147,15 +147,17 @@ fn translateRootNode(
                             const interface_fn_name = decl_name["Interface".len..];
                             if (!std.mem.eql(u8, interface_fn_name, "GetProcAddress")) {
                                 try interface_list.append(node);
-                                try writer.print(
-                                    \\pub inline fn {c}() void {{
-                                    \\    return bindings.{s}();
-                                    \\}}
-                                    \\
-                                , .{
-                                    fmt.IdFormatter{ .data = decl_name["Interface".len..] },
-                                    fmt.IdFormatter{ .data = decl_name["Interface".len..] },
-                                });
+                                const name_fmt = fmt.IdFormatter{
+                                    .data = decl_name["Interface".len..],
+                                };
+                                try writer.print("pub inline fn {c}(", .{name_fmt});
+                                try translateFnParams(subtype.*, tree, mapper, anon_typedef_map, .definition, writer);
+                                try writer.writeAll(") ");
+                                try translateType(subtype.data.func.return_type, tree, mapper, anon_typedef_map, writer);
+                                try writer.writeAll(" {\n");
+                                try writer.print("    return bindings.{s}(", .{name_fmt});
+                                try translateFnParams(subtype.*, tree, mapper, anon_typedef_map, .call, writer);
+                                try writer.writeAll(");\n}\n");
                                 return;
                             }
                         }
@@ -164,13 +166,18 @@ fn translateRootNode(
                 else => {},
             }
 
+            const typedef_name = tree.tokSlice(data.decl.name);
+            if (std.mem.endsWith(u8, typedef_name, "_t")) {
+                return;
+            }
             const loc: aro.Source.Location = tree.tokens.items(.loc)[data.decl.name];
             if (loc.id == public_source) {
                 try writer.writeAll("pub ");
             }
+
             // TODO conditionally set formatting based on the right-hand side
             try writer.print("const {p} = ", .{fmt.IdFormatter{
-                .data = noGdxPrefix(tree.tokSlice(data.decl.name)),
+                .data = noGdxPrefix(typedef_name),
             }});
 
             try translateType(ty, tree, mapper, anon_typedef_map, writer);
@@ -355,23 +362,37 @@ fn translateType(
     anon_typedef_map: std.StringHashMap([]const u8),
     writer: anytype,
 ) !void {
+    if (ty.qual.@"const") {
+        try writer.writeAll("const ");
+    }
+
     if (ty.typedef) |tok| {
         const token = tree.tokSlice(tok);
-        if (std.mem.eql(u8, token, "GDExtensionBool")) {
-            try writer.writeAll("bool");
+        if (std.mem.eql(u8, token, "size_t")) {
+            try writer.writeAll("usize");
             return;
         }
-        if (!std.mem.endsWith(u8, token, "_t") and !std.mem.eql(u8, token, "GDExtensionInt")) {
-            try writer.writeAll(noGdxPrefix(token));
-            return;
+        if (!std.mem.endsWith(u8, token, "_t")) {
+            const token_no_gdx = noGdxPrefix(token);
+            if (std.mem.eql(u8, token_no_gdx, "Bool")) {
+                try writer.writeAll("bool");
+                return;
+            }
+            if (!std.mem.eql(u8, token_no_gdx, "Int")) {
+                try writer.writeAll(token_no_gdx);
+                return;
+            }
         }
     }
     switch (ty.specifier) {
         .void, .bool => |specifier| try writer.writeAll(@tagName(specifier)),
 
         // int
-        .char, .uchar, .schar => {
-            try writer.writeAll("c_char");
+        .char, .uchar => {
+            try writer.writeAll("u8");
+        },
+        .schar => {
+            try writer.writeAll("i8");
         },
         inline .short,
         .ushort,
@@ -402,7 +423,11 @@ fn translateType(
             const sub_type = ty.data.sub_type;
             switch (sub_type.specifier) {
                 .void => {
-                    try writer.writeAll("?*anyopaque");
+                    try writer.writeAll("?*");
+                    if (sub_type.qual.@"const") {
+                        try writer.writeAll("const ");
+                    }
+                    try writer.writeAll("anyopaque");
                 },
                 .func, .var_args_func, .old_style_func => {
                     try writer.writeAll("*const ");
@@ -418,17 +443,7 @@ fn translateType(
         .func => {
             const func = ty.data.func;
             try writer.writeAll("fn (");
-            for (func.params, 0..) |param, i| {
-                const param_name = mapper.lookup(param.name);
-                if (param_name.len != 0) {
-                    try writer.print("{s}: ", .{param_name});
-                }
-
-                try translateType(param.ty, tree, mapper, anon_typedef_map, writer);
-                if (i != func.params.len - 1) {
-                    try writer.writeAll(", ");
-                }
-            }
+            try translateFnParams(ty, tree, mapper, anon_typedef_map, .definition, writer);
             try writer.writeAll(") callconv(.C) ");
             try translateType(func.return_type, tree, mapper, anon_typedef_map, writer);
         },
@@ -472,6 +487,46 @@ fn translateType(
         else => {
             @panic("unhandled");
         },
+    }
+}
+
+fn translateFnParams(
+    ty: aro.Type,
+    tree: aro.Tree,
+    mapper: aro.TypeMapper,
+    anon_typedef_map: std.StringHashMap([]const u8),
+    comptime syntax: enum { definition, call },
+    writer: anytype,
+) anyerror!void {
+    switch (ty.specifier) {
+        inline .func, .var_args_func, .old_style_func => |spec| {
+            const func = ty.data.func;
+            for (func.params, 0..) |param, i| {
+                const param_name = mapper.lookup(param.name);
+                switch (syntax) {
+                    .call => {
+                        if (param_name.len != 0) {
+                            try writer.print("{s}", .{param_name});
+                        } else {
+                            try writer.print("@\"{d}\"", .{i});
+                        }
+                    },
+                    .definition => {
+                        if (param_name.len != 0) {
+                            try writer.print("{s}: ", .{param_name});
+                        }
+                        try translateType(param.ty, tree, mapper, anon_typedef_map, writer);
+                    },
+                }
+                if (spec == .func and i != func.params.len - 1) {
+                    try writer.writeAll(", ");
+                }
+            }
+            if (syntax == .definition and spec != .func) {
+                try writer.writeAll("...");
+            }
+        },
+        else => unreachable,
     }
 }
 
