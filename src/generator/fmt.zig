@@ -86,17 +86,24 @@ pub fn formatSnakeCase(
     _ = fmt;
     _ = options;
     var last_lowercase: bool = false;
-
+    var last_digit: bool = false;
     for (data) |c| {
         switch (c) {
             'A'...'Z' => {
-                if (last_lowercase) try writer.writeByte('_');
+                if (last_lowercase or last_digit) try writer.writeByte('_');
                 try writer.writeByte(c | 0b00100000);
                 last_lowercase = false;
+                last_digit = false;
             },
             'a'...'z' => {
+                if (last_digit) try writer.writeByte('_');
                 try writer.writeByte(c);
                 last_lowercase = true;
+                last_digit = false;
+            },
+            '0'...'9' => {
+                try writer.writeByte(c);
+                last_digit = true;
             },
             else => {
                 try writer.writeByte(c);
