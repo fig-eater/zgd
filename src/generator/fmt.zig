@@ -1,6 +1,8 @@
 const std = @import("std");
+const aro = @import("aro");
 
 pub const IdFormatter = std.fmt.Formatter(formatIdSpecial);
+pub const AroValFormatter = std.fmt.Formatter(formatAroValue);
 
 /// Return bytes without the prefix
 pub fn withoutPrefix(bytes: []const u8, prefix: []const u8) []const u8 {
@@ -35,6 +37,44 @@ pub fn formatIdSpecial(
     try formatFunction(data, fmt, options, writer);
 
     if (!is_valid_id) try writer.writeByte('"');
+}
+
+pub fn formatAroValue(
+    data: struct {
+        aro.Value,
+        aro.Type,
+        *const aro.Compilation,
+    },
+    comptime fmt: []const u8,
+    options: std.fmt.FormatOptions,
+    writer: anytype,
+) !void {
+    _ = fmt;
+    _ = options;
+    const val, const ty, const comp = data;
+
+    if (ty.is(.bool)) {
+        return writer.writeAll(if (val.isZero(comp)) "false" else "true");
+    }
+    const key = comp.interner.get(val.ref());
+    switch (key) {
+        .null => return writer.writeAll("null"),
+        .int => |r| switch (r) {
+            inline else => |x| return writer.print("{d}", .{x}),
+        },
+        .float => |r| switch (r) {
+            .f16 => |x| return writer.print("{d}", .{
+                @round(@as(f64, @floatCast(x)) * 1000) / 1000,
+            }),
+            .f32 => |x| return writer.print("{d}", .{
+                @round(@as(f64, @floatCast(x)) * 1000000) / 1000000,
+            }),
+            inline else => |x| return writer.print("{d}", .{@as(f64, @floatCast(x))}),
+        },
+        .bytes => |b| return aro.Value.printString(b, ty, comp, writer),
+        .complex => @panic("not supported"),
+        else => unreachable, // not a value
+    }
 }
 
 pub fn formatSnakeCase(

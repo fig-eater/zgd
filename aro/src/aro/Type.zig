@@ -347,6 +347,7 @@ pub const Specifier = enum {
     complex_ulong_long,
     complex_int128,
     complex_uint128,
+    size,
 
     // data.int
     bit_int,
@@ -543,7 +544,7 @@ pub fn isInt(ty: Type) bool {
         .long_long, .ulong_long, .int128, .uint128, .complex_char, .complex_schar, .complex_uchar,
         .complex_short, .complex_ushort, .complex_int, .complex_uint, .complex_long, .complex_ulong,
         .complex_long_long, .complex_ulong_long, .complex_int128, .complex_uint128,
-        .bit_int, .complex_bit_int => true,
+        .bit_int, .complex_bit_int, .size, => true,
         // zig fmt: on
         .typeof_type => ty.data.sub_type.isInt(),
         .typeof_expr => ty.data.expr.ty.isInt(),
@@ -632,7 +633,7 @@ pub fn signedness(ty: Type, comp: *const Compilation) std.builtin.Signedness {
         // zig fmt: off
         .char, .complex_char => return comp.getCharSignedness(),
         .uchar, .ushort, .uint, .ulong, .ulong_long, .uint128, .bool, .complex_uchar, .complex_ushort,
-        .complex_uint, .complex_ulong, .complex_ulong_long, .complex_uint128 => .unsigned,
+        .complex_uint, .complex_ulong, .complex_ulong_long, .complex_uint128, .size => .unsigned,
         // zig fmt: on
         .bit_int, .complex_bit_int => ty.data.int.signedness,
         .typeof_type => ty.data.sub_type.signedness(comp),
@@ -987,6 +988,7 @@ pub fn sizeof(ty: Type, comp: *const Compilation) ?u64 {
         .ulong_long => comp.target.c_type_byte_size(.ulonglong),
         .long_double => comp.target.c_type_byte_size(.longdouble),
         .int128, .uint128 => 16,
+        .size => comp.types.size.sizeof(comp),
         .fp16, .float16 => 2,
         .float => comp.target.c_type_byte_size(.float),
         .double => comp.target.c_type_byte_size(.double),
@@ -1107,6 +1109,7 @@ pub fn alignof(ty: Type, comp: *const Compilation) u29 {
             const basic_type = comp.intLeastN(ty.data.int.bits, ty.data.int.signedness);
             return basic_type.alignof(comp);
         },
+        .size => comp.types.size.alignof(comp),
 
         .float => comp.target.c_type_alignment(.float),
         .double => comp.target.c_type_alignment(.double),
@@ -1539,6 +1542,7 @@ pub const Builder = struct {
         complex_bit_int: u64,
         complex_sbit_int: u64,
         complex_ubit_int: u64,
+        size,
 
         fp16,
         float16,
@@ -1616,6 +1620,7 @@ pub const Builder = struct {
                 .int128 => "__int128",
                 .sint128 => "signed __int128",
                 .uint128 => "unsigned __int128",
+                .size => "size_t",
                 .complex_char => "_Complex char",
                 .complex_schar => "_Complex signed char",
                 .complex_uchar => "_Complex unsigned char",
@@ -1739,6 +1744,7 @@ pub const Builder = struct {
             .ulong_long, .ulong_long_int => ty.specifier = .ulong_long,
             .int128, .sint128 => ty.specifier = .int128,
             .uint128 => ty.specifier = .uint128,
+            .size => ty.specifier = .size,
             .complex_unsigned => ty.specifier = .complex_uint,
             .complex_signed => ty.specifier = .complex_int,
             .complex_short_int, .complex_sshort_int, .complex_short, .complex_sshort => ty.specifier = .complex_short,
@@ -2282,6 +2288,7 @@ pub const Builder = struct {
             } else {
                 return .{ .complex_bit_int = ty.data.int.bits };
             },
+            .size => .size,
             .fp16 => .fp16,
             .float16 => .float16,
             .float => .float,
