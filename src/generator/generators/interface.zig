@@ -174,7 +174,7 @@ fn translateRootNode(
             {
                 try writer.writeAll("pub ");
             }
-            try writer.print("const {p} = struct {{\n", .{fmt.IdFormatter{ .data = noGdxPrefix(struct_name) }});
+            try writer.print("const {p} = extern struct {{\n", .{fmt.IdFormatter{ .data = noGdxPrefix(struct_name) }});
             for (tree.data[data.range.start..data.range.end]) |stmt| {
                 try translateChildNode(tree, mapper, anon_typedef_map, stmt, writer);
             }
