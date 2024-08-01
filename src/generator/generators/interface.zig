@@ -70,7 +70,7 @@ fn translate(tree: aro.Tree, public_source: aro.Source.Id, writer: anytype) !voi
         const data: aro.Tree.Node.Data = tree.nodes.items(.data)[@intFromEnum(node)];
         const ty: aro.Type = tree.nodes.items(.ty)[@intFromEnum(node)];
         const decl_name = noGdxPrefix(tree.tokSlice(data.decl.name))["Interface".len..];
-        try writer.print("    var {s}: ", .{fmt.IdFormatter{ .data = decl_name }});
+        try writer.print("    pub var {s}: ", .{fmt.IdFormatter{ .data = decl_name }});
         try translateType(ty, tree, mapper, anon_typedef_map, writer);
         try writer.writeAll(" = undefined;\n");
     }
