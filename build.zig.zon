@@ -13,11 +13,10 @@
         "build.zig",
         "build.zig.zon",
         "common.zig",
-
         "LICENSE",
         "README.md",
-
-        "build-steps",
         "src",
+        "aro",
+        "build",
     },
 }
