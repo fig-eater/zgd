@@ -96,7 +96,6 @@ pub fn formatSnakeCase(
                 last_digit = false;
             },
             'a'...'z' => {
-                if (last_digit) try writer.writeByte('_');
                 try writer.writeByte(c);
                 last_lowercase = true;
                 last_digit = false;
@@ -107,6 +106,7 @@ pub fn formatSnakeCase(
             },
             else => {
                 try writer.writeByte(c);
+                last_digit = false;
                 last_lowercase = false;
             },
         }
