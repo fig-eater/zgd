@@ -26,7 +26,7 @@ pub fn generate(
     defer godot_file.close();
     const godot_writer = godot_file.writer();
 
-    try godot_writer.writeAll("pub const interface = @import(\"gdextension_interface\");\n");
+    try godot_writer.writeAll("pub const interface = @import(\"interface.zig\");\n");
 
     try @import("generators/header.zig").generate(output_directory, api.header);
     try @import("generators/global_enums.zig").generate(output_directory, api.global_enums);

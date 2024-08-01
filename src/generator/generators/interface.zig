@@ -109,36 +109,6 @@ fn translateRootNode(
                         return;
                     }
                 },
-                .char,
-                .uchar,
-                .schar,
-                .short,
-                .ushort,
-                .int,
-                .uint,
-                .long,
-                .ulong,
-                .long_long,
-                .ulong_long,
-                .int128,
-                .uint128,
-                .bit_int,
-                => {
-
-                    // const decl_name = tree.tokSlice(data.decl.name);
-                    // std.debug.print("{s}\n", .{decl_name});
-                    // if (std.mem.endsWith(u8, decl_name, "_t")) {
-                    //     try writer.writeAll("const size_t = usize;\n");
-                    //     return;
-                    // }
-                },
-                .fp16,
-                .float16,
-                .float,
-                .double,
-                .long_double,
-                .float128,
-                => {},
                 .pointer => {
                     const subtype = ty.data.sub_type;
                     if (subtype.specifier == .func) {
@@ -175,7 +145,6 @@ fn translateRootNode(
                 try writer.writeAll("pub ");
             }
 
-            // TODO conditionally set formatting based on the right-hand side
             try writer.print("const {p} = ", .{fmt.IdFormatter{
                 .data = noGdxPrefix(typedef_name),
             }});
