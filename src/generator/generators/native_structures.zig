@@ -1,5 +1,5 @@
 const Api = @import("../Api.zig");
-const fmt = @import("../fmt.zig");
+const fmt = @import("../../fmt.zig");
 
 pub fn generate(godot_writer: anytype, structures: []const Api.NativeStructure) !void {
     var id_fmt: fmt.IdFormatter = undefined;

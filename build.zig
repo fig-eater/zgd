@@ -15,7 +15,7 @@ const Step = Build.Step;
 
 const bindings_dir = "src/bindings/";
 
-const zgd_module_root = bindings_dir ++ "godot.zig";
+const zgd_module_root = "src/godot_root.zig"; //bindings_dir ++ "godot.zig";
 
 pub fn build(b: *Build) !void {
     // config

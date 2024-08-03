@@ -1,6 +1,6 @@
 const std = @import("std");
 const Api = @import("../Api.zig");
-const IdFormatter = @import("../fmt.zig").IdFormatter;
+const IdFormatter = @import("../../fmt.zig").IdFormatter;
 const Dir = std.fs.Dir;
 
 pub fn writeFunction(writer: anytype, func: Api.Function) !void {

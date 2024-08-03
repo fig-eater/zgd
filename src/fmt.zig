@@ -1,6 +1,8 @@
 const std = @import("std");
 const aro = @import("aro");
 
+pub usingnamespace std.fmt;
+
 pub const IdFormatter = std.fmt.Formatter(formatIdSpecial);
 pub const AroValFormatter = std.fmt.Formatter(formatAroValue);
 

@@ -1,5 +1,5 @@
 const Api = @import("../Api.zig");
-const IdFormatter = @import("../fmt.zig").IdFormatter;
+const IdFormatter = @import("../../fmt.zig").IdFormatter;
 
 pub fn generate(godot_writer: anytype, global_constants: []const Api.GlobalConstant) !void {
     var id_fmt: IdFormatter = undefined;

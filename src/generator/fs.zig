@@ -1,4 +1,5 @@
 const std = @import("std");
+pub usingnamespace std.fs;
 
 pub fn makeDirAbsoluteIfMissing(path: []const u8) !void {
     std.fs.makeDirAbsolute(path) catch |err| switch (err) {

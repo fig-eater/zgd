@@ -1,11 +1,8 @@
 const std = @import("std");
-const generator = @import("generator.zig");
-const BuildConfig = @import("util.zig").BuildConfig;
-const Api = @import("Api.zig");
-const fs = struct {
-    usingnamespace std.fs;
-    usingnamespace @import("fs.zig");
-};
+const generator = @import("generator/generator.zig");
+const BuildConfig = @import("generator/util.zig").BuildConfig;
+const Api = @import("generator/Api.zig");
+const fs = @import("generator/fs.zig");
 const Allocator = std.mem.Allocator;
 const AnyReader = std.io.AnyReader;
 

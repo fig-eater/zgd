@@ -3,14 +3,8 @@ const Api = @import("../Api.zig");
 const util = @import("../util.zig");
 const builtin_classes = @import("builtin_classes.zig");
 const func_gen = @import("function_generator.zig");
-const fs = struct {
-    usingnamespace std.fs;
-    usingnamespace @import("../fs.zig");
-};
-const fmt = struct {
-    usingnamespace std.fmt;
-    usingnamespace @import("../fmt.zig");
-};
+const fs = @import("../fs.zig");
+const fmt = @import("../../fmt.zig");
 const Dir = fs.Dir;
 const Allocator = std.mem.Allocator;
 
@@ -19,24 +13,18 @@ pub fn generate(
     godot_writer: anytype,
     output_directory: Dir,
     api: Api,
-    build_config: util.BuildConfig,
 ) !void {
     try fs.makeDirIfMissing(output_directory, "classes");
     var classes_dir = try output_directory.openDir("classes", .{});
     defer classes_dir.close();
 
+    try fs.makeDirIfMissing(classes_dir, "builtin");
+    var builtin_classes_dir = try classes_dir.openDir("builtin", .{});
+    defer builtin_classes_dir.close();
+
     try fs.makeDirIfMissing(classes_dir, "internal");
     var internal_dir = try classes_dir.openDir("internal", .{});
     defer internal_dir.close();
-
-    try builtin_classes.generate(
-        allocator,
-        classes_dir,
-        internal_dir,
-        godot_writer,
-        api,
-        build_config,
-    );
 
     for (api.classes) |class| {
         try generateClass(allocator, godot_writer, classes_dir, internal_dir, class);

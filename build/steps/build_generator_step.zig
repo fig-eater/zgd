@@ -3,7 +3,7 @@ const BuildConfig = @import("../../common.zig").BuildConfig;
 const Build = std.Build;
 const Step = Build.Step;
 
-const generator_root = "src/generator/root.zig";
+const generator_root = "src/generator_root.zig";
 
 const Args = struct {
     aro_module: *Build.Module,

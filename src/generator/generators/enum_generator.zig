@@ -1,6 +1,6 @@
 const std = @import("std");
 const Api = @import("../Api.zig");
-const fmt = @import("../fmt.zig");
+const fmt = @import("../../fmt.zig");
 const Dir = std.fs.Dir;
 
 const PrefixMap = std.StaticStringMap([]const u8);

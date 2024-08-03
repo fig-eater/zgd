@@ -1,7 +1,7 @@
 const std = @import("std");
 const Dir = std.fs.Dir;
 const aro = @import("aro");
-const fmt = @import("../fmt.zig");
+const fmt = @import("../../fmt.zig");
 const NodeList = std.ArrayList(aro.Tree.NodeIndex);
 
 pub fn generate(
@@ -20,15 +20,7 @@ pub fn generate(
         \\//!
         \\//! Generated from gdextension_interface.h
         \\
-        \\/// Initialize function bindings for GDExtension interface
-        \\///
-        \\/// `getProcAddress` - function pointer to GDExtensionInterfaceGetProcAddress function
-        \\/// provided by extension entry point.
-        \\pub fn initBindings(getProcAddress: InterfaceGetProcAddress) void {
-        \\    inline for (@typeInfo(bindings).Struct.decls) |decl| {
-        \\        @field(bindings, decl.name) = @ptrCast(getProcAddress(decl.name));
-        \\    }
-        \\}
+        \\pub usingnamespace @import("../static/interface.zig");
         \\
     );
 
@@ -125,7 +117,7 @@ fn translateRootNode(
                                 try writer.writeAll(") ");
                                 try translateType(subtype.data.func.return_type, tree, mapper, anon_typedef_map, writer);
                                 try writer.writeAll(" {\n");
-                                try writer.print("    return bindings.{s}(", .{name_fmt});
+                                try writer.print("    return bindings.{s}.?(", .{name_fmt});
                                 try translateFnParams(subtype.*, tree, mapper, anon_typedef_map, .call, writer);
                                 try writer.writeAll(");\n}\n");
                                 return;
@@ -399,7 +391,7 @@ fn translateType(
                     try writer.writeAll("anyopaque");
                 },
                 .func, .var_args_func, .old_style_func => {
-                    try writer.writeAll("*const ");
+                    try writer.writeAll("?*const ");
                     try translateType(sub_type.*, tree, mapper, anon_typedef_map, writer);
                 },
                 else => {

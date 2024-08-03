@@ -3,12 +3,10 @@ const func_gen = @import("function_generator.zig");
 const Api = @import("../Api.zig");
 const util = @import("../util.zig");
 const Allocator = std.mem.Allocator;
-const Dir = std.fs.Dir;
-const FileWriter = std.fs.File.Writer;
-const fmt = struct {
-    usingnamespace std.fmt;
-    usingnamespace @import("../fmt.zig");
-};
+const fs = @import("../fs.zig");
+const Dir = fs.Dir;
+const FileWriter = fs.File.Writer;
+const fmt = @import("../../fmt.zig");
 
 const BuiltinClassGenerator = *const fn (
     allocator: Allocator,
@@ -27,12 +25,19 @@ var builtin_class_custom_generator_map = std.StaticStringMap(BuiltinClassGenerat
 
 pub fn generate(
     allocator: Allocator,
-    classes_dir: Dir,
-    classes_internal_dir: Dir,
+    output_directory: Dir,
     godot_writer: FileWriter,
     api: Api,
     build_config: util.BuildConfig,
 ) !void {
+    try fs.makeDirIfMissing(output_directory, "builtin_classes");
+    var builtin_classes_dir = try output_directory.openDir("builtin_classes", .{});
+    defer builtin_classes_dir.close();
+
+    try fs.makeDirIfMissing(builtin_classes_dir, "internal");
+    var internal_dir = try builtin_classes_dir.openDir("internal", .{});
+    defer internal_dir.close();
+
     var built_in_size_map = try initBuiltinSizeMap(
         allocator,
         api.builtin_class_sizes,
@@ -45,8 +50,8 @@ pub fn generate(
             &generateBuiltinClass;
         try handler(
             allocator,
-            classes_dir,
-            classes_internal_dir,
+            builtin_classes_dir,
+            internal_dir,
             class,
             godot_writer,
             built_in_size_map.get(class.name) orelse 0,
@@ -64,7 +69,7 @@ fn generateBuiltinClass(
 ) !void {
     var id_fmt: fmt.IdFormatter = undefined;
     id_fmt.data = class.name;
-    try godot_writer.print("pub const {p} = @import(\"classes/{s}.zig\");\n", .{
+    try godot_writer.print("pub const {p} = @import(\"builtin_classes/{s}.zig\");\n", .{
         id_fmt,
         class.name,
     });
