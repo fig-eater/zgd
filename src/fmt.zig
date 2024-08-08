@@ -1,9 +1,16 @@
 const std = @import("std");
 const aro = @import("aro");
-
+const case_fmt = @import("case_fmt.zig");
+pub usingnamespace case_fmt;
 pub usingnamespace std.fmt;
 
-pub const IdFormatter = std.fmt.Formatter(formatIdSpecial);
+/// Formatter for valid zig ids with a specific case
+pub fn fmtId(data: []const u8) IdFormatter {
+    return .{ .data = data };
+}
+
+pub const IdFormatter = std.fmt.Formatter(formatId);
+
 pub const AroValFormatter = std.fmt.Formatter(formatAroValue);
 
 /// Return bytes without the prefix
@@ -14,29 +21,17 @@ pub fn withoutPrefix(bytes: []const u8, prefix: []const u8) []const u8 {
     return bytes;
 }
 
-pub fn formatIdSpecial(
+pub fn formatId(
     data: []const u8,
     comptime fmt: []const u8,
     options: std.fmt.FormatOptions,
     writer: anytype,
 ) !void {
-    if (fmt.len == 0) {
-        try std.zig.fmtId(data).format("{}", options, writer);
-        return;
-    }
-
-    const formatFunction = comptime switch (fmt[0]) {
-        's' => formatSnakeCase,
-        'c' => formatCamelCase,
-        'p' => formatPascalCase,
-        else => @compileError("expected {}, {s}, {c}, or {p}, found {" ++ fmt ++ "}"),
-    };
-
     const is_valid_id = isValidIdCaseInsensitive(data);
 
     if (!is_valid_id) try writer.writeAll("@\"");
 
-    try formatFunction(data, fmt, options, writer);
+    case_fmt.formatConvertCase(data, fmt, options, writer);
 
     if (!is_valid_id) try writer.writeByte('"');
 }
@@ -76,135 +71,6 @@ pub fn formatAroValue(
         .bytes => |b| return aro.Value.printString(b, ty, comp, writer),
         .complex => @panic("not supported"),
         else => unreachable, // not a value
-    }
-}
-
-pub fn formatSnakeCase(
-    data: []const u8,
-    comptime fmt: []const u8,
-    options: std.fmt.FormatOptions,
-    writer: anytype,
-) !void {
-    _ = fmt;
-    _ = options;
-    var last_lowercase: bool = false;
-    var last_digit: bool = false;
-    for (data) |c| {
-        switch (c) {
-            'A'...'Z' => {
-                if (last_lowercase or last_digit) try writer.writeByte('_');
-                try writer.writeByte(c | 0b00100000);
-                last_lowercase = false;
-                last_digit = false;
-            },
-            'a'...'z' => {
-                try writer.writeByte(c);
-                last_lowercase = true;
-                last_digit = false;
-            },
-            '0'...'9' => {
-                try writer.writeByte(c);
-                last_digit = true;
-            },
-            else => {
-                try writer.writeByte(c);
-                last_digit = false;
-                last_lowercase = false;
-            },
-        }
-    }
-}
-
-pub fn formatCamelCase(
-    data: []const u8,
-    comptime fmt: []const u8,
-    options: std.fmt.FormatOptions,
-    writer: anytype,
-) !void {
-    _ = fmt;
-    _ = options;
-
-    const rest_start = rest_start_block: {
-        for (data, 0..) |c, i| {
-            switch (c) {
-                'A'...'Z' => {
-                    try writer.writeByte(c | 0b00100000); // make first character lowercase
-                    break :rest_start_block i + 1;
-                },
-                // skip whitespace or separator
-                '_',
-                ' ',
-                '\t',
-                '\n',
-                '\r',
-                std.ascii.control_code.vt,
-                std.ascii.control_code.ff,
-                => {},
-                else => {
-                    try writer.writeByte(c);
-                    break :rest_start_block i + 1;
-                },
-            }
-        }
-        break :rest_start_block data.len;
-    };
-
-    if (rest_start < data.len) {
-        var word_start: bool = false;
-        for (data[rest_start..]) |c| {
-            switch (c) {
-                'a'...'z' => {
-                    try writer.writeByte(if (word_start) c & 0b11011111 else c);
-                    word_start = false;
-                },
-                // white space or separator
-                '_',
-                ' ',
-                '\t',
-                '\n',
-                '\r',
-                std.ascii.control_code.vt,
-                std.ascii.control_code.ff,
-                => word_start = true,
-                else => {
-                    try writer.writeByte(c);
-                    word_start = false;
-                },
-            }
-        }
-    }
-}
-
-pub fn formatPascalCase(
-    data: []const u8,
-    comptime fmt: []const u8,
-    options: std.fmt.FormatOptions,
-    writer: anytype,
-) !void {
-    _ = fmt;
-    _ = options;
-
-    var word_start: bool = true;
-    for (data) |c| {
-        switch (c) {
-            'a'...'z' => {
-                try writer.writeByte(if (word_start) c & 0b11011111 else c);
-                word_start = false;
-            },
-            // white space or separator
-            '_',
-            ' ',
-            '\t',
-            '\n',
-            '\r',
-            std.ascii.control_code.vt,
-            std.ascii.control_code.ff,
-            => word_start = true,
-            else => {
-                try writer.writeByte(c);
-                word_start = false;
-            },
-        }
     }
 }
 
