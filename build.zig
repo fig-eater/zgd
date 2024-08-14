@@ -6,16 +6,14 @@ const steps = @import("build/steps.zig");
 const local_modules = struct {
     const common = @import("build/local-modules/common_module.zig");
     const aro = @import("build/local-modules/aro_module.zig");
+    const gen = @import("build/local-modules/gen_module.zig");
 };
-const modules = struct {
-    const godot = @import("build/modules/godot_module.zig");
-};
+const godot_module = @import("build/godot_module.zig");
 const Build = std.Build;
 const Step = Build.Step;
 
-const bindings_dir = "src/bindings/";
-
-const zgd_module_root = "src/godot_root.zig"; //bindings_dir ++ "godot.zig";
+const gen_dir = "src/";
+const gen_root = gen_dir ++ "gen_root.zig";
 
 pub fn build(b: *Build) !void {
     // config
@@ -32,7 +30,6 @@ pub fn build(b: *Build) !void {
         .godot_path = if (opts.godot_path) |p| b.path(p) else null,
     };
 
-    // local modules
     const common_module = local_modules.common.addToBuild(b);
     const aro_module, const aro_include_path = local_modules.aro.addToBuild(b, target, optimize);
 
@@ -57,16 +54,21 @@ pub fn build(b: *Build) !void {
 
         // options
         .force_regen = opts.force_bindings_regen,
-        .bindings_directory = b.path(bindings_dir),
+        .bindings_directory = b.path(gen_dir),
     });
-    _ = steps.@"test".addToBuild(b, .{ .optimize = optimize, .target = target });
 
-    // zgd module
-    _ = modules.godot.addToBuild(b, .{
-        .zgd_module_root = zgd_module_root,
+    // gen module
+    const gen = local_modules.gen.addToBuild(b, .{
         .generate_bindings_step = generate_bindings_step,
+        .root = gen_root,
         .target = target,
         .optimize = optimize,
+    });
+
+    // godot module
+    _ = godot_module.addToBuild(b, .{
+        .gen_module = gen,
+        .root = "src/godot_root.zig",
     });
 
     b.default_step = generate_bindings_step;

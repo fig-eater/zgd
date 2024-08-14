@@ -22,39 +22,69 @@ pub fn generate(
     output_directory: fs.Dir,
 ) !void {
     // create root module file
-    const godot_file = try output_directory.createFile("godot.zig", .{});
+    const godot_file = try output_directory.createFile("gen_root.zig", .{});
     defer godot_file.close();
-    const godot_writer = godot_file.writer();
+    const root_writer = godot_file.writer();
 
-    try godot_writer.writeAll("pub const interface = @import(\"interface.zig\");\n");
-    try godot_writer.writeAll("pub usingnamespace @import(\"../static/godot.zig\");\n");
+    try fs.makeDirIfMissing(output_directory, "gen");
+    var gen_dir = try output_directory.openDir("gen", .{});
+    defer gen_dir.close();
 
-    try @import("generators/header.zig").generate(output_directory, api.header);
-    try @import("generators/global_enums.zig").generate(output_directory, api.global_enums);
+    try @import("generators/header.zig").generate(gen_dir, api.header);
+
+    try root_writer.writeAll(
+        \\pub const global_enums = @import("gen/global_enums.zig");
+        \\pub usingnamespace global_enums;
+        \\
+    );
+    try @import("generators/global_enums.zig").generate(gen_dir, api.global_enums);
+
+    try root_writer.writeAll(
+        \\pub const util = @import("gen/utility_functions.zig");
+        \\pub usingnamespace util;
+        \\
+    );
     try @import("generators/utility_functions.zig").generate(
-        output_directory,
+        gen_dir,
         api.utility_functions,
     );
-    try @import("generators/global_constants.zig").generate(godot_writer, api.global_constants);
 
+    try @import("generators/global_constants.zig").generate(root_writer, api.global_constants);
+
+    try root_writer.writeAll(
+        \\pub const builtin_classes = @import("gen/builtin_classes.zig");
+        \\pub usingnamespace builtin_classes;
+        \\
+    );
     try @import("generators/builtin_classes.zig").generate(
         allocator,
-        output_directory,
-        godot_writer,
+        gen_dir,
         api,
         build_config,
     );
+
+    try root_writer.writeAll(
+        \\pub const classes = @import("gen/classes.zig");
+        \\pub usingnamespace classes;
+        \\
+    );
     try @import("generators/classes.zig").generate(
         allocator,
-        godot_writer,
-        output_directory,
+        gen_dir,
         api,
     );
-    try @import("generators/native_structures.zig").generate(godot_writer, api.native_structures);
+
+    try @import("generators/native_structures.zig").generate(root_writer, api.native_structures);
+
+    try root_writer.writeAll(
+        \\pub const interface = @import("gen/interface.zig");
+        \\pub usingnamespace interface;
+        \\
+    );
     try @import("generators/interface.zig").generate(
         allocator,
         interface_path,
         include_dir_path,
-        output_directory,
+        gen_dir,
     );
 }

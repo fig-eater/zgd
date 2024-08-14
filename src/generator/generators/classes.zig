@@ -10,10 +10,13 @@ const Allocator = std.mem.Allocator;
 
 pub fn generate(
     allocator: Allocator,
-    godot_writer: anytype,
     output_directory: Dir,
     api: Api,
 ) !void {
+    const file = try output_directory.createFile("classes.zig", .{});
+    defer file.close();
+    const classes_writer = file.writer();
+
     try fs.makeDirIfMissing(output_directory, "classes");
     var classes_dir = try output_directory.openDir("classes", .{});
     defer classes_dir.close();
@@ -27,13 +30,13 @@ pub fn generate(
     defer internal_dir.close();
 
     for (api.classes) |class| {
-        try generateClass(allocator, godot_writer, classes_dir, internal_dir, class);
+        try generateClass(allocator, classes_writer, classes_dir, internal_dir, class);
     }
 }
 
 pub fn generateClass(
     allocator: Allocator,
-    godot_writer: anytype,
+    classes_writer: anytype,
     class_dir: Dir,
     internal_dir: Dir,
     class: Api.Class,
@@ -46,7 +49,7 @@ pub fn generateClass(
     const file_name = try fmt.allocPrint(allocator, "{s}.zig", .{class_name_id});
     defer allocator.free(file_name);
 
-    try godot_writer.print("pub const {s} = @import(\"classes/{s}\");\n", .{ class_name_id, file_name });
+    try classes_writer.print("pub const {s} = @import(\"classes/{s}\");\n", .{ class_name_id, file_name });
 
     const file = try class_dir.createFile(file_name, .{});
     defer file.close();

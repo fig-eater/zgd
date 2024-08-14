@@ -16,6 +16,7 @@ const BuiltinClassGenerator = *const fn (
     godot_writer: FileWriter,
     size: usize,
 ) anyerror!void;
+
 var builtin_class_custom_generator_map = std.StaticStringMap(BuiltinClassGenerator).initComptime(.{
     .{ "int", &generateBuiltinClassInt },
     .{ "float", &generateBuiltinClassFloat },
@@ -26,10 +27,13 @@ var builtin_class_custom_generator_map = std.StaticStringMap(BuiltinClassGenerat
 pub fn generate(
     allocator: Allocator,
     output_directory: Dir,
-    godot_writer: FileWriter,
     api: Api,
     build_config: util.BuildConfig,
 ) !void {
+    const file = try output_directory.createFile("builtin_classes.zig", .{});
+    defer file.close();
+    const builtin_classes_writer = file.writer();
+
     try fs.makeDirIfMissing(output_directory, "builtin_classes");
     var builtin_classes_dir = try output_directory.openDir("builtin_classes", .{});
     defer builtin_classes_dir.close();
@@ -53,7 +57,7 @@ pub fn generate(
             builtin_classes_dir,
             internal_dir,
             class,
-            godot_writer,
+            builtin_classes_writer,
             built_in_size_map.get(class.name) orelse 0,
         );
     }
@@ -64,18 +68,16 @@ fn generateBuiltinClass(
     output_dir: Dir,
     internals_dir: Dir,
     class: Api.BuiltinClass,
-    godot_writer: FileWriter,
+    builtin_writer: FileWriter,
     size: usize,
 ) !void {
-    var id_fmt: fmt.IdFormatter = undefined;
-    id_fmt.data = class.name;
-    try godot_writer.print("pub const {p} = @import(\"builtin_classes/{s}.zig\");\n", .{
-        id_fmt,
-        class.name,
+    const fmt_class_name = fmt.fmtId(class.name);
+    try builtin_writer.print("pub const {p} = @import(\"builtin_classes/{p}.zig\");\n", .{
+        fmt_class_name,
+        fmt_class_name,
     });
 
-    id_fmt.data = class.name;
-    const class_name_id = try fmt.allocPrint(allocator, "{p}", .{id_fmt});
+    const class_name_id = try fmt.allocPrint(allocator, "{p}", .{fmt_class_name});
     defer allocator.free(class_name_id);
 
     // setup class file writer
@@ -84,6 +86,12 @@ fn generateBuiltinClass(
     const file = try output_dir.createFile(file_name, .{});
     defer file.close();
     const writer = file.writer();
+
+    var static_dir = try output_dir.openDir("../../static", .{});
+    defer static_dir.close();
+    if (static_dir.access(file_name, .{})) {
+        try writer.print("pub usingnamespace @import(\"../../static/{s}\");\n", .{file_name});
+    } else |_| {}
 
     // setup internal class file writer
     const internal_file_name = try fmt.allocPrint(
@@ -98,8 +106,8 @@ fn generateBuiltinClass(
 
     // import godot lib into both
     try writer.writeAll("const overloading = @import(\"overloading\");\n");
-    try writer.writeAll("const GD = @import(\"../godot.zig\");\n");
-    try internal_file_writer.writeAll("const GD = @import(\"../../godot.zig\");\n");
+    try writer.writeAll("const gd = @import(\"../../gen_root.zig\");\n");
+    try internal_file_writer.writeAll("const gd = @import(\"../../../gen_root.zig\");\n");
 
     // import internal into class file
     try writer.print(
@@ -119,12 +127,10 @@ fn generateBuiltinClass(
 
         try internal_file_writer.writeAll("var " ++ util.function_bindings_name ++ ": struct {\n");
         for (methods) |func| {
-            id_fmt.data = func.name;
-            const func_name_id = try fmt.allocPrint(allocator, "{c}", .{id_fmt});
+            const func_name_id = try fmt.allocPrint(allocator, "{c}", .{fmt.fmtId(func.name)});
             defer allocator.free(func_name_id);
 
-            id_fmt.data = func.return_type;
-            const return_type_id = try fmt.allocPrint(allocator, "{p}", .{id_fmt});
+            const return_type_id = try fmt.allocPrint(allocator, "{p}", .{fmt.fmtId(func.return_type)});
             defer allocator.free(return_type_id);
 
             try internal_file_writer.print("    {s}: *fn (", .{func_name_id});
@@ -133,11 +139,11 @@ fn generateBuiltinClass(
             // add self as first param if non-static
             if (!func.is_static) {
                 if (func.is_const) {
-                    try writer.print("self: GD.{s}", .{class_name_id});
-                    try internal_file_writer.print("self: GD.{s}", .{class_name_id});
+                    try writer.print("self: gd.{s}", .{class_name_id});
+                    try internal_file_writer.print("self: gd.{s}", .{class_name_id});
                 } else {
-                    try writer.print("self: *GD.{s}", .{class_name_id});
-                    try internal_file_writer.print("self: *GD.{s}", .{class_name_id});
+                    try writer.print("self: *gd.{s}", .{class_name_id});
+                    try internal_file_writer.print("self: *gd.{s}", .{class_name_id});
                 }
             }
 
@@ -149,8 +155,8 @@ fn generateBuiltinClass(
                 try func_gen.writeFunctionArgs(internal_file_writer, args);
                 try func_gen.writeFunctionArgs(writer, args);
             }
-            try internal_file_writer.print(") GD.{s},\n", .{return_type_id});
-            try writer.print(") GD.{s} {{\n", .{return_type_id});
+            try internal_file_writer.print(") gd.{s},\n", .{return_type_id});
+            try writer.print(") gd.{s} {{\n", .{return_type_id});
 
             { // call binding function
                 try writer.print("    return internal.bindings.{s}(", .{func_name_id});
@@ -163,11 +169,9 @@ fn generateBuiltinClass(
                     if (!func.is_static) {
                         try writer.writeAll(", ");
                     }
-                    id_fmt.data = args[0].name;
-                    try writer.print("{s}_", .{id_fmt});
+                    try writer.print("{_s}", .{fmt.fmtId(args[0].name)});
                     for (args[1..]) |arg| {
-                        id_fmt.data = arg.name;
-                        try writer.print(", {s}_", .{id_fmt});
+                        try writer.print(", {_s}", .{fmt.fmtId(arg.name)});
                     }
                 }
 

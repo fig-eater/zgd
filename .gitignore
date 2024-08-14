@@ -2,6 +2,6 @@
 zig-out/
 
 api-dump/
-bindings/
-
+gen/
+gen_root.zig
 

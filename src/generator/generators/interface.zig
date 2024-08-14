@@ -20,8 +20,6 @@ pub fn generate(
         \\//!
         \\//! Generated from gdextension_interface.h
         \\
-        \\pub usingnamespace @import("../static/interface.zig");
-        \\
     );
 
     var comp = try aro.Compilation.initDefault(allocator);
@@ -109,9 +107,7 @@ fn translateRootNode(
                             const interface_fn_name = decl_name["Interface".len..];
                             if (!std.mem.eql(u8, interface_fn_name, "GetProcAddress")) {
                                 try interface_list.append(node);
-                                const name_fmt = fmt.IdFormatter{
-                                    .data = decl_name["Interface".len..],
-                                };
+                                const name_fmt = fmt.fmtId(decl_name["Interface".len..]);
                                 try writer.print("pub inline fn {c}(", .{name_fmt});
                                 try translateFnParams(subtype.*, tree, mapper, anon_typedef_map, .definition, writer);
                                 try writer.writeAll(") ");
@@ -137,9 +133,7 @@ fn translateRootNode(
                 try writer.writeAll("pub ");
             }
 
-            try writer.print("const {p} = ", .{fmt.IdFormatter{
-                .data = noGdxPrefix(typedef_name),
-            }});
+            try writer.print("const {p} = ", .{fmt.fmtId(noGdxPrefix(typedef_name))});
 
             try translateType(ty, tree, mapper, anon_typedef_map, writer);
             try writer.writeAll(";\n");
@@ -166,48 +160,39 @@ fn translateRootNode(
             {
                 try writer.writeAll("pub ");
             }
-            try writer.print("const {p} = extern struct {{\n", .{fmt.IdFormatter{ .data = noGdxPrefix(struct_name) }});
+            const name_fmt = fmt.fmtId(noGdxPrefix(struct_name));
+            try writer.print("const {p} = extern struct {{\n", .{name_fmt});
             for (tree.data[data.range.start..data.range.end]) |stmt| {
                 try translateChildNode(tree, mapper, anon_typedef_map, stmt, writer);
             }
             try writer.writeAll("};\n");
         },
-        .struct_decl_two => {
-            const mapped_name = mapper.lookup(ty.data.record.name);
-            const struct_name = if (anon_typedef_map.get(mapped_name)) |n| n else mapped_name;
+        // .struct_decl_two => {
+        //     const mapped_name = mapper.lookup(ty.data.record.name);
+        //     const struct_name = if (anon_typedef_map.get(mapped_name)) |n| n else mapped_name;
 
-            if (ty.data.record.fields.len > 0 and
-                tree.tokens.items(.loc)[ty.data.record.fields[0].name_tok].id == public_source)
-            {
-                try writer.writeAll("pub ");
-            }
-            try writer.print("const {p} = struct {{\n", .{fmt.IdFormatter{ .data = noGdxPrefix(struct_name) }});
-            // for (tree.data[data.bin.start..data.range.end]) |stmt| {
-            //     try translateChildNode(tree, mapper, anon_typedef_map, stmt, writer);
-            // }
-            try writer.writeAll("};\n");
-        },
+        //     if (ty.data.record.fields.len > 0 and
+        //         tree.tokens.items(.loc)[ty.data.record.fields[0].name_tok].id == public_source)
+        //     {
+        //         try writer.writeAll("pub ");
+        //     }
+        //     try writer.print("const {p} = struct {{\n", .{fmt.fmtId(noGdxPrefix(struct_name))});
+        //     // for (tree.data[data.bin.start..data.range.end]) |stmt| {
+        //     //     try translateChildNode(tree, mapper, anon_typedef_map, stmt, writer);
+        //     // }
+        //     try writer.writeAll("};\n");
+        // },
         .@"var" => {
-            try writer.print("// const {s} = {any} {any}\n", .{
+            std.debug.panic(
+                \\this case shouldn't be reached, if so likely missing a define.
+                \\  decl.name: {s}
+                \\  node: {any}
+            , .{
                 tree.tokSlice(data.decl.name),
                 tree.value_map.get(node),
-                tree.value_map.get(data.decl.node),
-                // tree.value_map.get(ty.data.int),
             });
-
-            // if (tree.value_map.get(data.decl.node)) |val| {
-            //     try writer.print("// var {}\n", .{fmt.AroValFormatter{ .data = .{
-            //         val,
-            //         ty,
-            //         tree.comp,
-            //     } }});
-            // } else {
-            //     try writer.print("// var {s} UNKNOWN\n", .{@tagName(ty.specifier)});
-            // }
         },
-        else => {
-            std.debug.panic("unhandled: {s}", .{@tagName(tag)});
-        },
+        else => std.debug.panic("unhandled: {s}", .{@tagName(tag)}),
     }
 }
 
@@ -229,7 +214,7 @@ fn translateEnum(
         try writer.writeAll("pub ");
     }
 
-    try writer.print("const {p} = enum(c_int) {{\n", .{fmt.IdFormatter{ .data = noGdxPrefix(enum_name) }});
+    try writer.print("const {p} = enum(c_int) {{\n", .{fmt.fmtId(noGdxPrefix(enum_name))});
 
     // remove prefix
     var prefix: []const u8 = &.{};
@@ -275,9 +260,8 @@ fn translateEnumField(
 
     std.debug.assert(tag == .enum_field_decl);
 
-    try writer.print("    {s}", .{fmt.IdFormatter{
-        .data = fmt.withoutPrefix(tree.tokSlice(data.decl.name), prefix),
-    }});
+    const name_fmt = fmt.fmtId(fmt.withoutPrefix(tree.tokSlice(data.decl.name), prefix));
+    try writer.print("    {s}", .{name_fmt});
     if (tree.value_map.get(node)) |val| {
         try writer.print(" = {}", .{fmt.AroValFormatter{ .data = .{
             val,
@@ -301,14 +285,10 @@ fn translateChildNode(
 
     switch (tag) {
         .enum_field_decl => {
-            try writer.print("    {s},\n", .{fmt.IdFormatter{
-                .data = tree.tokSlice(data.decl.name),
-            }});
+            try writer.print("    {s},\n", .{fmt.fmtId(tree.tokSlice(data.decl.name))});
         },
         .record_field_decl => {
-            try writer.print("    {s}: ", .{fmt.IdFormatter{
-                .data = tree.tokSlice(data.decl.name),
-            }});
+            try writer.print("    {s}: ", .{fmt.fmtId(tree.tokSlice(data.decl.name))});
             try translateType(ty, tree, mapper, anon_typedef_map, writer);
             try writer.writeAll(",\n");
         },
@@ -340,7 +320,7 @@ fn translateType(
                 return;
             }
             if (!std.mem.eql(u8, token_no_gdx, "Int")) {
-                try writer.writeAll(token_no_gdx);
+                try writer.print("{p}", .{fmt.fmtId(token_no_gdx)});
                 return;
             }
         }
@@ -433,7 +413,7 @@ fn translateType(
         .@"struct" => {
             const mapped_name = mapper.lookup(ty.data.record.name);
             const name = if (anon_typedef_map.get(mapped_name)) |n| n else mapped_name;
-            try writer.writeAll(noGdxPrefix(name));
+            try writer.print("{p}", .{fmt.fmtId(noGdxPrefix(name))});
         },
         .@"union" => {
             try writer.writeAll("####union####");
@@ -443,7 +423,7 @@ fn translateType(
         .@"enum" => {
             const mapped_name = mapper.lookup(ty.data.@"enum".name);
             const name = if (anon_typedef_map.get(mapped_name)) |n| n else mapped_name;
-            try writer.writeAll(noGdxPrefix(name));
+            try writer.print("{p}", .{fmt.fmtId(noGdxPrefix(name))});
         },
         else => {
             @panic("unhandled");
@@ -467,14 +447,14 @@ fn translateFnParams(
                 switch (syntax) {
                     .call => {
                         if (param_name.len != 0) {
-                            try writer.print("{s}", .{param_name});
+                            try writer.print("{s}", .{fmt.fmtId(param_name)});
                         } else {
                             try writer.print("@\"{d}\"", .{i});
                         }
                     },
                     .definition => {
                         if (param_name.len != 0) {
-                            try writer.print("{s}: ", .{param_name});
+                            try writer.print("{s}: ", .{fmt.fmtId(param_name)});
                         }
                         try translateType(param.ty, tree, mapper, anon_typedef_map, writer);
                     },

@@ -27,13 +27,16 @@ pub fn formatId(
     options: std.fmt.FormatOptions,
     writer: anytype,
 ) !void {
-    const is_valid_id = isValidIdCaseInsensitive(data);
-
-    if (!is_valid_id) try writer.writeAll("@\"");
-
-    case_fmt.formatConvertCase(data, fmt, options, writer);
-
-    if (!is_valid_id) try writer.writeByte('"');
+    if (fmt.len > 1 and fmt[0] == '_') {
+        try writer.writeByte('_');
+        try case_fmt.formatConvertCase(data, fmt[1..], options, writer);
+    } else if (!isValidId(data)) {
+        try writer.writeAll("@\"");
+        try case_fmt.formatConvertCase(data, fmt, options, writer);
+        try writer.writeByte('"');
+    } else {
+        try case_fmt.formatConvertCase(data, fmt, options, writer);
+    }
 }
 
 pub fn formatAroValue(
@@ -74,22 +77,42 @@ pub fn formatAroValue(
     }
 }
 
-fn isValidIdCaseInsensitive(bytes: []const u8) bool {
-    if (!std.zig.isValidId(bytes)) return false;
-    const bytes_len = bytes.len;
-    const bytes_last = bytes_len - 1;
-    check_keyword_block: for (std.zig.Token.keywords.keys()) |keyword| {
-        if (keyword.len == bytes_len and
-            keyword[0] == (bytes[0] | 0b00100000) and
-            keyword[bytes_last] == (bytes[bytes_last] | 0b00100000))
-        {
-            for (bytes[1..bytes_last], keyword[1..bytes_last]) |data_char, key_char| {
-                if ((data_char | 0b00100000) != key_char) {
-                    continue :check_keyword_block; // continue to next word
-                }
-            }
-            return false; // matches keyword
-        }
+fn isValidId(bytes: []const u8) bool {
+    if (bytes.len == 0) return false;
+    switch (bytes[0]) {
+        '_', 'a'...'z', 'A'...'Z' => {},
+        '0'...'9' => return false,
+        else => return false,
     }
+
+    const min_keyword_len, const max_keyword_len = comptime max_keyword_len_blk: {
+        var max_keyword_len = 0;
+        var min_keyword_len = std.math.maxInt(usize);
+        for (std.zig.Token.keywords.keys()) |keyword| {
+            if (keyword.len > max_keyword_len) {
+                max_keyword_len = keyword.len;
+            }
+            if (keyword.len < min_keyword_len) {
+                min_keyword_len = keyword.len;
+            }
+        }
+        break :max_keyword_len_blk .{ min_keyword_len, max_keyword_len };
+    };
+
+    if (bytes.len <= max_keyword_len and bytes.len >= min_keyword_len) {
+        var buffer: [max_keyword_len]u8 = undefined;
+        for (bytes, 0..) |c, i| switch (c) {
+            'A'...'Z' => buffer[i] = c | 0b00100000,
+            '_', 'a'...'z', '0'...'9' => buffer[i] = c,
+            else => return false,
+        };
+        return std.zig.Token.keywords.get(buffer[0..bytes.len]) == null;
+    } else {
+        for (bytes[1..]) |c| switch (c) {
+            '_', 'a'...'z', 'A'...'Z', '0'...'9' => {},
+            else => return false,
+        };
+    }
+
     return true;
 }
