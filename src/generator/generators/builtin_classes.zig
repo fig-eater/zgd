@@ -89,9 +89,6 @@ fn generateBuiltinClass(
 
     var static_dir = try output_dir.openDir("../../static", .{});
     defer static_dir.close();
-    if (static_dir.access(file_name, .{})) {
-        try writer.print("pub usingnamespace @import(\"../../static/{s}\");\n", .{file_name});
-    } else |_| {}
 
     // setup internal class file writer
     const internal_file_name = try fmt.allocPrint(
@@ -102,64 +99,69 @@ fn generateBuiltinClass(
     defer allocator.free(internal_file_name);
     const internal_file = try internals_dir.createFile(internal_file_name, .{});
     defer internal_file.close();
-    const internal_file_writer = internal_file.writer();
+    const internal_writer = internal_file.writer();
 
-    // import godot lib into both
-    try writer.writeAll("const overloading = @import(\"overloading\");\n");
+    if (static_dir.access(file_name, .{})) {
+        try writer.print("pub usingnamespace @import(\"../../static/{s}\");\n", .{file_name});
+    } else |_| {}
     try writer.writeAll("const gd = @import(\"../../gen_root.zig\");\n");
-    try internal_file_writer.writeAll("const gd = @import(\"../../../gen_root.zig\");\n");
-
-    // import internal into class file
     try writer.print(
-        "const internal = @import(\"" ++ util.internal_name ++ "/{s}\");\n",
+        "pub const internal = @import(\"" ++ util.internal_name ++ "/{s}\");\n",
         .{internal_file_name},
     );
-
-    // write class size to internal
-    try internal_file_writer.print("pub const size = {d};\n", .{size});
-
-    // write opaque blob to class
     try writer.writeAll(util.opaque_field_name ++ ": [internal.size]u8,\n");
+
+    try internal_writer.writeAll("const gd = @import(\"../../../gen_root.zig\");\n");
+    try internal_writer.print("pub const size = {d};\n", .{size});
 
     // method bindings
     if (class.methods) |methods| {
-        try func_gen.writeConstructor(writer, internal_file_writer, class_name_id, class); // write constructors
 
-        try internal_file_writer.writeAll("var " ++ util.function_bindings_name ++ ": struct {\n");
+        // write hashes
+        try internal_writer.writeAll("pub const hashes = .{\n");
         for (methods) |func| {
-            const func_name_id = try fmt.allocPrint(allocator, "{c}", .{fmt.fmtId(func.name)});
-            defer allocator.free(func_name_id);
+            try internal_writer.print("    .{s} = {d},\n", .{ func.name, func.hash });
+        }
+        try internal_writer.writeAll("};\n");
+
+        try func_gen.writeConstructor(writer, internal_writer, class_name_id, class); // write constructors
+
+        try internal_writer.writeAll("pub const " ++ util.function_bindings_name ++ " = struct {\n");
+        for (methods) |func| {
+            const func_name_fmt = fmt.fmtId(func.name);
+            const func_name_s = try fmt.allocPrint(allocator, "{s}", .{func_name_fmt});
+            defer allocator.free(func_name_s);
 
             const return_type_id = try fmt.allocPrint(allocator, "{p}", .{fmt.fmtId(func.return_type)});
             defer allocator.free(return_type_id);
 
-            try internal_file_writer.print("    {s}: *fn (", .{func_name_id});
-            try writer.print("pub inline fn {s}(", .{func_name_id});
+            try internal_writer.print("    pub var {s}: ?*fn (", .{func_name_s});
+            try writer.print("pub inline fn {c}(", .{func_name_fmt});
 
             // add self as first param if non-static
             if (!func.is_static) {
                 if (func.is_const) {
                     try writer.print("self: gd.{s}", .{class_name_id});
-                    try internal_file_writer.print("self: gd.{s}", .{class_name_id});
+                    try internal_writer.print("self: gd.{s}", .{class_name_id});
                 } else {
                     try writer.print("self: *gd.{s}", .{class_name_id});
-                    try internal_file_writer.print("self: *gd.{s}", .{class_name_id});
+                    try internal_writer.print("self: *gd.{s}", .{class_name_id});
                 }
             }
 
             if (func.arguments) |args| {
                 if (!func.is_static) {
                     try writer.writeAll(", ");
-                    try internal_file_writer.writeAll(", ");
+                    try internal_writer.writeAll(", ");
                 }
-                try func_gen.writeFunctionArgs(internal_file_writer, args);
+                try func_gen.writeFunctionArgs(internal_writer, args);
                 try func_gen.writeFunctionArgs(writer, args);
             }
-            try internal_file_writer.print(") gd.{s},\n", .{return_type_id});
+            try internal_writer.print(") gd.{s} = undefined;\n", .{return_type_id});
             try writer.print(") gd.{s} {{\n", .{return_type_id});
 
             { // call binding function
-                try writer.print("    return internal.bindings.{s}(", .{func_name_id});
+                try writer.print("    return internal.bindings.{s}(", .{func_name_s});
 
                 if (!func.is_static) {
                     try writer.writeAll("self");
@@ -179,7 +181,7 @@ fn generateBuiltinClass(
             }
             try writer.writeAll("}\n"); // close function definition
         }
-        try internal_file_writer.writeAll("} = undefined;\n");
+        try internal_writer.writeAll("};\n");
     }
 }
 fn generateBuiltinClassBool(

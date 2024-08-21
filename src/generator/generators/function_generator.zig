@@ -38,7 +38,7 @@ pub fn writeConstructor(
         try internal_writer.print(") gd.{s} = undefined;\n", .{class_name_id});
         try writer.writeAll(");\n}\n");
     } else { // write overloaded
-        try writer.writeAll("pub const init = overloading.make(.{\n");
+        try writer.writeAll("pub const init = @import(\"overloading\").make(.{\n");
         try internal_writer.writeAll("pub var constructors: struct {\n");
         for (class.constructors) |constructor| {
             try writer.print("    internal.init{d},", .{constructor.index});

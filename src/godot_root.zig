@@ -1,11 +1,11 @@
 const gd = @This();
 const std = @import("std");
-const gen = @import("gen_root.zig");
+const gen = @import("gen");
 const gdi = gd.interface;
 const fmt = @import("fmt.zig");
 pub usingnamespace gen;
 
-pub const InitializerFn = fn (user_data: ?*anyopaque, init_level: gdi.InitializationLevel) void;
+pub const InitFn = fn (user_data: ?*anyopaque, init_level: gdi.InitializationLevel) void;
 
 /// Initialize bindings and GDextension
 pub fn init(
@@ -14,14 +14,14 @@ pub fn init(
     godot_init_struct: [*c]gdi.Initialization,
     userdata: ?*anyopaque,
     comptime init_deinit_fns: struct {
-        initCoreFn: ?InitializerFn = null,
-        initServersFn: ?InitializerFn = null,
-        initSceneFn: ?InitializerFn = null,
-        initEditorFn: ?InitializerFn = null,
-        deinitCoreFn: ?InitializerFn = null,
-        deinitServersFn: ?InitializerFn = null,
-        deinitSceneFn: ?InitializerFn = null,
-        deinitEditorFn: ?InitializerFn = null,
+        initCoreFn: ?InitFn = null,
+        initServersFn: ?InitFn = null,
+        initSceneFn: ?InitFn = null,
+        initEditorFn: ?InitFn = null,
+        deinitCoreFn: ?InitFn = null,
+        deinitServersFn: ?InitFn = null,
+        deinitSceneFn: ?InitFn = null,
+        deinitEditorFn: ?InitFn = null,
     },
 ) void {
     const InitDeinit = struct {
@@ -64,7 +64,8 @@ pub fn init(
     std.debug.assert(class_lib_ptr != null);
     std.debug.assert(godot_init_struct != null);
 
-    gdi.initBindings(getProcAddressFn);
+    // gdi.initBindings(getProcAddressFn);
+    initBuiltinClasses();
 
     godot_init_struct.* = .{
         .initialize = InitDeinit.initExtension,
@@ -75,51 +76,27 @@ pub fn init(
 }
 
 pub fn initBuiltinClasses() void {
-    const variant_type_enum: std.builtin.Type.Enum = @typeInfo(gdi.VariantType).Enum;
-
-    const Array = std.EnumArray(gdi.VariantType, type);
-    const array: Array = comptime ret: {
-        var values: std.enums.EnumFieldStruct(gdi.VariantType, type, void) = undefined;
-        const type_enum: std.builtin.Type.Enum = @typeInfo(gdi.VariantType).Enum;
-        for (type_enum.fields) |field| {
-            var buf: [field.name.len]u8 = 0 ** field.name.len;
-            const type_name = fmt.bufPrint(buf[0..], "{p}", .{field.name}) catch unreachable;
-            if (@hasField(gd.initBuiltinClasses(), type_name)) {
-                @field(values, field.name) = @field(gd.builtin_classes, type_name);
-            }
+    inline for (comptime std.enums.values(gdi.VariantType)) |t| {
+        switch (t) {
+            .variant_max, .nil, .bool, .int, .float, .object => {},
+            else => {
+                const T = VariantType(t);
+                for (@typeInfo(T.internal.bindings).Struct.fields) |binding| {
+                    const binding_name = gd.StringName.fromZigSlice(binding.name);
+                    @field(T.internal.bindings, binding.name) = gdi.variantGetPtrBuiltinMethod(
+                        t,
+                        &binding_name,
+                        @field(T.internal.hashes, binding_name),
+                    );
+                }
+            },
         }
-        break :ret Array.init(values);
-    };
-    _ = array; // autofix
-    for (variant_type_enum.fields) |fields| {
-        _ = fields; // autofix
-
     }
-    // const val: gdi.VariantType = @field(gdi.VariantType, field.name);
-}
-
-/// Get a Variant type from an enum value `t`.
-/// Passing in the max value will return void
-fn VariantType(t: gdi.VariantType) type {
-    const Array = std.EnumArray(gdi.VariantType, type);
-    const array: Array = comptime ret: {
-        var values: std.enums.EnumFieldStruct(gdi.VariantType, type, void) = undefined;
-        const type_enum: std.builtin.Type.Enum = @typeInfo(gdi.VariantType).Enum;
-        for (type_enum.fields) |field| {
-            var buf: [field.name.len]u8 = 0 ** field.name.len;
-            const type_name = fmt.bufPrint(buf[0..], "{p}", .{field.name}) catch unreachable;
-            if (@hasField(gd.initBuiltinClasses(), type_name)) {
-                @field(values, field.name) = @field(gd.builtin_classes, type_name);
-            }
-        }
-        break :ret Array.init(values);
-    };
-    return array.get(t);
 }
 
 fn initUtilityFunctionBindings() void {
-    gdi.variantGetPtrUtilityFunction();
-    gen.utility_functions.bindings;
+    // gdi.variantGetPtrUtilityFunction();
+    // gen.utility_functions.bindings;
 }
 
 /// Get an allocator which uses the Godot memory functions
@@ -172,4 +149,25 @@ pub fn initInterfaceBindings(getProcAddress: gdi.InterfaceGetProcAddress) void {
     inline for (@typeInfo(gdi.bindings).Struct.decls) |decl| {
         @field(gdi.bindings, decl.name) = @ptrCast(getProcAddress.?(decl.name));
     }
+}
+
+/// Get the type from a VariantType enum value
+pub fn VariantType(comptime t: gdi.VariantType) type {
+    return comptime ret: {
+        switch (t) {
+            .variant_max, .nil => {
+                @compileError("Invalid type");
+            },
+            else => {
+                const tag_name = @tagName(t);
+                var buf: [tag_name.len]u8 = .{0} ** tag_name.len;
+                const name = fmt.bufPrint(buf[0..], "{p}", .{fmt.fmtId(tag_name)}) catch
+                    unreachable;
+                if (!@hasDecl(gd.builtin_classes, name)) {
+                    @compileError("Type not found: " ++ name);
+                }
+                break :ret @field(gd.builtin_classes, name);
+            },
+        }
+    };
 }

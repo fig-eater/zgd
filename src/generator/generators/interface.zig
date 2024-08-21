@@ -128,12 +128,18 @@ fn translateRootNode(
             if (std.mem.endsWith(u8, typedef_name, "_t")) {
                 return;
             }
+
+            const typedef_name_no_gdx = noGdxPrefix(typedef_name);
+            if (std.mem.eql(u8, typedef_name_no_gdx, "Int") and std.mem.eql(u8, typedef_name_no_gdx, "Bool")) {
+                return; // skip int and bool
+            }
+
             const loc: aro.Source.Location = tree.tokens.items(.loc)[data.decl.name];
             if (loc.id == public_source) {
                 try writer.writeAll("pub ");
             }
 
-            try writer.print("const {p} = ", .{fmt.fmtId(noGdxPrefix(typedef_name))});
+            try writer.print("const {p} = ", .{fmt.fmtId(typedef_name_no_gdx)});
 
             try translateType(ty, tree, mapper, anon_typedef_map, writer);
             try writer.writeAll(";\n");
@@ -167,21 +173,6 @@ fn translateRootNode(
             }
             try writer.writeAll("};\n");
         },
-        // .struct_decl_two => {
-        //     const mapped_name = mapper.lookup(ty.data.record.name);
-        //     const struct_name = if (anon_typedef_map.get(mapped_name)) |n| n else mapped_name;
-
-        //     if (ty.data.record.fields.len > 0 and
-        //         tree.tokens.items(.loc)[ty.data.record.fields[0].name_tok].id == public_source)
-        //     {
-        //         try writer.writeAll("pub ");
-        //     }
-        //     try writer.print("const {p} = struct {{\n", .{fmt.fmtId(noGdxPrefix(struct_name))});
-        //     // for (tree.data[data.bin.start..data.range.end]) |stmt| {
-        //     //     try translateChildNode(tree, mapper, anon_typedef_map, stmt, writer);
-        //     // }
-        //     try writer.writeAll("};\n");
-        // },
         .@"var" => {
             std.debug.panic(
                 \\this case shouldn't be reached, if so likely missing a define.
